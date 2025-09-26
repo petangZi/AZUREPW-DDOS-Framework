@@ -1,6 +1,6 @@
 # 🚀 AZUREPW DDOS FRAMEWORK v5.0
 
-![Version](https://img.shields.io/badge/version-5.0-blue)
+![Version](https://img.shields.io/badge/version-1.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Platform](https://img.shields.io/badge/platform-linux%20%7C%20windows%20%7C%20macos-yellow)
 ![Python](https://img.shields.io/badge/python-3.6%2B-orange)
@@ -66,4 +66,5 @@ cd azurepw-ddos-framework
 chmod +x azurepw.py
 
 # Run the framework
+
 python3 azurepw.py
