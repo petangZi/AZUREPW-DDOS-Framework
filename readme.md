@@ -1,4 +1,4 @@
-# AZUREPW-DDOS-Framework v9.0
+# AZUREPW-DDOS-Framework v1.0
 
 ![Version](https://img.shields.io/badge/version-9.0-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
@@ -26,4 +26,5 @@ Using it against systems without permission is ILLEGAL!
 git clone https://github.com/petangZi/AZUREPW-DDOS-Framework
 cd AZUREPW-DDOS-Framework
 pip install -r requirements.txt
+
 sudo python3 azurepw_ddos_framework.py
