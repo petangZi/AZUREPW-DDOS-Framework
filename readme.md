@@ -23,8 +23,20 @@ Using it against systems without permission is ILLEGAL!
 
 ## 📦 **Installation**
 ```bash
+- Python 3.6+  
+- Root privileges (for raw socket access)  
+- Linux/Windows/macOS  
+
 git clone https://github.com/petangZi/AZUREPW-DDOS-Framework
 cd AZUREPW-DDOS-Framework
+python3 -m venv venv
+# Activate virtual environment
+source venv/bin/activate    # Linux/Mac
+# atau
+venv\Scripts\activate      # Windows
 pip install -r requirements.txt
-
-sudo python3 azurepw_ddos_framework.py
+#if scapy eror(linux)
+sudo apt-get install libpcap-dev
+#start
+sudo python3
+azurepw_ddos_framework.py
